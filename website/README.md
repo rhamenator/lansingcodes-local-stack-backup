@@ -184,8 +184,13 @@ older `api` repository also contains sync functions.
 ## Deployments
 
 After a pull request is reviewed and merged to `main`, Netlify automatically
-builds and publishes the site. The Netlify scheduled function runs every 2 hours
-to sync the latest Meetup events into Firestore.
+builds and publishes the staging site (`lansingcodes-staging`). Production
+(`lansingcodes-www`, `www.lansing.codes`) is deployed from `main` by the
+manually triggered [Deploy to production](.github/workflows/deploy-production.yml)
+GitHub Actions workflow after its required environment approval. An admin
+confirmed on October 22, 2026 that this `website` repository had replaced the
+older `www` and `api` repositories in production. The Netlify scheduled function
+runs every 2 hours to sync the latest Meetup events into Firestore.
 
 For both staging and production, Netlify runs `npm run build` and deploys the
 resulting `.next` directory via `@netlify/plugin-nextjs`.
