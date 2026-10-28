@@ -15,6 +15,7 @@
 const fs = require('fs')
 const path = require('path')
 const legacyScripts = require('../legacy-scripts.json')
+const loadLegacyScripts = require('./load-legacy-scripts')
 
 require('coffeescript/register')
 
@@ -39,12 +40,10 @@ module.exports = async (robot) => {
 
   if (!robot.router) robot.setupNullRouter()
 
-  for (const name of legacyScripts) {
-    try {
-      await require(name)(robot)
-    } catch (error) {
-      robot.logger.error(`Unable to load ${name}: ${error.stack}`)
-      process.exit(1)
-    }
+  try {
+    await loadLegacyScripts(robot, legacyScripts)
+  } catch (error) {
+    robot.logger.error(`Unable to load a legacy script: ${error.stack}`)
+    process.exit(1)
   }
 }

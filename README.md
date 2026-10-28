@@ -6,13 +6,13 @@ The source branch, base commit, and changed paths for each folder are recorded i
 
 | Folder | Source branch | Snapshot files | Local changes |
 | --- | --- | ---: | ---: |
-| [api](api/) | `fix/security-runtime` | 77 | 26 |
+| [api](api/) | `fix/security-runtime` | 77 | 29 |
 | [beginner-resources](beginner-resources/) | `main` | 5 | 0 |
 | [newsletter-events](newsletter-events/) | `fix/browser-deps-xss` | 19 | 12 |
 | [organizer-resources](organizer-resources/) | `main` | 7 | 0 |
 | [promotion](promotion/) | `main` | 37 | 0 |
 | [sign-in-sheet](sign-in-sheet/) | `fix/title-rendering` | 8 | 3 |
-| [slackbot](slackbot/) | `fix/slackbot-runtime-security` | 78 | 48 |
+| [slackbot](slackbot/) | `fix/slackbot-runtime-security` | 85 | 58 |
 | [slackin](slackin/) | `main` | 49 | 0 |
 | [slackin-redirect](slackin-redirect/) | `fix/http-redirect-docs` | 5 | 4 |
 | [slide](slide/) | `fix/security-runtime` | 15 | 8 |
