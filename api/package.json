@@ -1,0 +1,47 @@
+{
+  "name": "lansingcodes-firebase-tools",
+  "version": "1.0.0",
+  "description": "Tools for managing Lansing Codes data",
+  "author": "Michigan Technology Network, LLC",
+  "contributors": [
+    "Andrew Tomaka",
+    "Chris Fritz",
+    "Erik Gillespie <erik.gillespie@gmail.com>",
+    "Meg Blaha",
+    "Joe Ryan"
+  ],
+  "license": "Hippocratic-2.1",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "precommit": "run-s lint test",
+    "build": "run-s lint test",
+    "compile": "netlify build --offline",
+    "db:select": "firebase use $FIREBASE_PROJECT",
+    "db:deploy": "firebase deploy",
+    "deploy": "run-s build db:select db:deploy",
+    "lint": "eslint --ext .js --ignore-path .gitignore .",
+    "lintfix": "eslint --fix --ext .js --ignore-path .gitignore .",
+    "dev": "netlify functions:serve --offline --port 9000",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.0",
+    "firebase-tools": "^15.34.1",
+    "jest": "^29.7.0",
+    "netlify-cli": "^27.15.0",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.2.0"
+  },
+  "dependencies": {
+    "axios": "^1.21.0",
+    "firebase-admin": "^14.5.0",
+    "ical2json": "^2.0.0",
+    "moment": "^2.31.0",
+    "moment-timezone": "^0.6.5"
+  }
+}

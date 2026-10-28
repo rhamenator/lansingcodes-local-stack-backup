@@ -1,0 +1,226 @@
+{
+  "snapshot_date": "2026-10-28",
+  "purpose": "Private backup of local Lansing Codes working trees, including uncommitted and untracked non-ignored files",
+  "repositories": [
+    {
+      "folder": "api",
+      "source": "https://github.com/lansingcodes/api",
+      "branch": "fix/security-runtime",
+      "base_commit": "8a0fa3acdf1c44711dd038f75089515c2d54d06d",
+      "snapshot_files": 77,
+      "working_tree_status": [
+        " M .dockerignore",
+        " M .gitignore",
+        " M Dockerfile",
+        " M Dockerfile.firebase",
+        " M README.md",
+        " M docker-compose.yml",
+        " M firebase.json",
+        " M netlify.toml",
+        " M package-lock.json",
+        " M package.json",
+        " M src/deploy-succeeded.js",
+        " M src/firebase/admin/close.js",
+        " M src/firebase/admin/initialize.js",
+        " M src/firebase/constants/service-account.js",
+        " M src/firebase/helpers/delete-collection.js",
+        " M src/firebase/helpers/set-collection-to-object.js",
+        " M src/load-events.js",
+        " M src/load-groups.js",
+        " M src/load-sponsors.js",
+        " M test-env.js",
+        "?? functions/",
+        "?? public/",
+        "?? src/authorize-sync.js",
+        "?? src/authorize-sync.test.js",
+        "?? src/sync-enabled.js",
+        "?? src/sync-enabled.test.js"
+      ]
+    },
+    {
+      "folder": "beginner-resources",
+      "source": "https://github.com/lansingcodes/beginner-resources",
+      "branch": "main",
+      "base_commit": "cb51b5498b09bfc5e14d2c59ef78a8ad2e17b648",
+      "snapshot_files": 5,
+      "working_tree_status": []
+    },
+    {
+      "folder": "newsletter-events",
+      "source": "https://github.com/lansingcodes/newsletter-events",
+      "branch": "fix/browser-deps-xss",
+      "base_commit": "5f19a61869e45b0673b40e530606d81bec9008b4",
+      "snapshot_files": 19,
+      "working_tree_status": [
+        " M README.md",
+        " M index.html",
+        " M index.js",
+        "?? .gitignore",
+        "?? .nvmrc",
+        "?? events.js",
+        "?? favicon.ico",
+        "?? package-lock.json",
+        "?? package.json",
+        "?? render.js",
+        "?? test/",
+        "?? vendor/"
+      ]
+    },
+    {
+      "folder": "organizer-resources",
+      "source": "https://github.com/lansingcodes/organizer-resources",
+      "branch": "main",
+      "base_commit": "c61bfdab1d4c15b56edf0dca3be39fc9f9304864",
+      "snapshot_files": 7,
+      "working_tree_status": []
+    },
+    {
+      "folder": "promotion",
+      "source": "https://github.com/lansingcodes/promotion",
+      "branch": "main",
+      "base_commit": "c174c3f5b781a89ce65dcb3ceb6e5f77b1f15707",
+      "snapshot_files": 37,
+      "working_tree_status": []
+    },
+    {
+      "folder": "sign-in-sheet",
+      "source": "https://github.com/lansingcodes/sign-in-sheet",
+      "branch": "fix/title-rendering",
+      "base_commit": "d1585eda76a4e1fb3054868bdd3492c12fc98fa8",
+      "snapshot_files": 8,
+      "working_tree_status": [
+        " M README.md",
+        " M script.js",
+        "?? test/"
+      ]
+    },
+    {
+      "folder": "slackbot",
+      "source": "https://github.com/lansingcodes/slackbot",
+      "branch": "fix/slackbot-runtime-security",
+      "base_commit": "7e9708a898c073905230dd0ba0e190acfe046790",
+      "snapshot_files": 78,
+      "working_tree_status": [
+        " M .circleci/config.yml",
+        " M .gitignore",
+        " M Procfile",
+        " M README.md",
+        " M bin/hubot",
+        " M external-scripts.json",
+        " M lib/fetchers/init-firestore.js",
+        " M lib/helpers/first-name-for.js",
+        " M lib/helpers/generate-welcome-email-for.js",
+        " M lib/helpers/member-alias-for.js",
+        " M lib/helpers/organizer-for.js",
+        " M lib/helpers/shorten-url.js",
+        " M lib/helpers/tweet.js",
+        " M lib/initializers/email-responder.js",
+        " M lib/initializers/events-responder.js",
+        " M lib/initializers/mentioned-rooms-referencer.js",
+        " M lib/initializers/new-participant-notifier.js",
+        " M lib/initializers/tweeter.js",
+        " M lib/initializers/watch-for-disconnected.js",
+        " M lib/scheduled-tasks/check-for-upcoming-events.js",
+        " M lib/templates/welcome-email.js",
+        " M package-lock.json",
+        " M package.json",
+        " M scripts/initialize.js",
+        " M spec/helpers/include-hubot.js",
+        " M spec/lib/helpers/organizer-for-spec.js",
+        " M spec/lib/helpers/shorten-url-spec.js",
+        " M spec/lib/initializers/mentioned-rooms-referencer-spec.js",
+        " M spec/lib/initializers/new-participant-notifier-spec.js",
+        " M spec/lib/initializers/tweeter-spec.js",
+        " M spec/lib/initializers/watch-for-disconnected-spec.js",
+        " M spec/lib/templates/welcome-email-spec.js",
+        "?? .env.example",
+        "?? .npmrc",
+        "?? .nvmrc",
+        "?? CONTRIBUTOR_ADMIN_REPORT.md",
+        "?? configuration/",
+        "?? dev-tools/",
+        "?? legacy-scripts.json",
+        "?? scripts/run-live-slack-test.sh",
+        "?? scripts/run-local-stack-smoke.sh",
+        "?? scripts/save-x-oauth2-app-credentials.sh",
+        "?? scripts/save-x-test-credentials.sh",
+        "?? spec/lib/fetchers/",
+        "?? spec/lib/helpers/generate-welcome-email-for-spec.js",
+        "?? spec/lib/helpers/tweet-spec.js",
+        "?? spec/lib/scheduled-tasks/",
+        "?? src/"
+      ]
+    },
+    {
+      "folder": "slackin",
+      "source": "https://github.com/lansingcodes/slackin",
+      "branch": "main",
+      "base_commit": "f024b6d235efadae1cb653bcd891471d056cc39d",
+      "snapshot_files": 49,
+      "working_tree_status": []
+    },
+    {
+      "folder": "slackin-redirect",
+      "source": "https://github.com/lansingcodes/slackin-redirect",
+      "branch": "fix/http-redirect-docs",
+      "base_commit": "f4c96300aff4c6652d354b1dd4bb27739f2d1192",
+      "snapshot_files": 5,
+      "working_tree_status": [
+        " M README.md",
+        " M index.html",
+        "?? .gitignore",
+        "?? _redirects"
+      ]
+    },
+    {
+      "folder": "slide",
+      "source": "https://github.com/lansingcodes/slide",
+      "branch": "fix/security-runtime",
+      "base_commit": "cc80f5d19f4b20ea4af1c7a58dfccbc3c4297db6",
+      "snapshot_files": 15,
+      "working_tree_status": [
+        " M .gitignore",
+        " M README.md",
+        " M index.html",
+        " M package-lock.json",
+        " M package.json",
+        "?? main.js",
+        "?? netlify.toml",
+        "?? public/"
+      ]
+    },
+    {
+      "folder": "webfont",
+      "source": "https://github.com/lansingcodes/webfont",
+      "branch": "main",
+      "base_commit": "44bfede08fffc7a9905b680693112523b8b8c2b4",
+      "snapshot_files": 13,
+      "working_tree_status": []
+    },
+    {
+      "folder": "website",
+      "source": "https://github.com/lansingcodes/website",
+      "branch": "fix/security-quality",
+      "base_commit": "07e8ad752dffcc6fee92990523e4f3c743030923",
+      "snapshot_files": 117,
+      "working_tree_status": [
+        " M README.md",
+        " M lib/firebase/admin.ts",
+        " M lib/meetup/fetchEventsForGroup.ts",
+        " M lib/meetup/icalToEvents.ts",
+        " M package-lock.json",
+        " M package.json",
+        "?? AGENTS.md",
+        "?? lib/meetup/fetchEventsForGroup.test.ts"
+      ]
+    },
+    {
+      "folder": "www",
+      "source": "https://github.com/lansingcodes/www",
+      "branch": "main",
+      "base_commit": "a834c1cc4c74c4fdddeea74ca3aba358775295c5",
+      "snapshot_files": 89,
+      "working_tree_status": []
+    }
+  ]
+}

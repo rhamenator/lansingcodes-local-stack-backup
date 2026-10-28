@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  functions = "functions"
+  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "22"
+  FIREBASE_PROJECT = "lansingcodes-dev"
+
+[context.deploy-preview.environment]
+  FIREBASE_PROJECT = "lansing-codes-staging"
+
+[context.main.environment]
+  FIREBASE_PROJECT = "lansing-codes-staging"
+
+[context.production.environment]
+  FIREBASE_PROJECT = "lansing-codes"

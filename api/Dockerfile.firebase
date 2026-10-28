@@ -1,0 +1,8 @@
+FROM node:22-trixie
+
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-21-jre-headless && rm -rf /var/lib/apt/lists/*
+RUN npm install -g firebase-tools@15.34.1
+
+WORKDIR /firebase
+
+CMD ["firebase", "emulators:start", "--only", "firestore,auth", "--project", "lansingcodes-dev"]

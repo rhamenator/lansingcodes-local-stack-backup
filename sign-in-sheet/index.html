@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Lansing Codes Event Sign-in Sheet</title>
+  <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <aside>
+    <p>
+      Anything appearing in red (including this message) will not appear in the
+      printed version of this page.
+    </p>
+    <p>
+      Type your event name in the red box to the right of the logo. It will be
+      centered correctly in the print version.
+    </p>
+    <p>
+      <label for="pageCount">Number of pages</label>
+      <input type="number" min="1" id="pageCount" value="1">
+      <label for="showLineNumbers" style="margin-left: 2em">Show line numbers</label>
+      <input type="checkbox" id="showLineNumbers">
+    </p>
+  </aside>
+  <main>
+    <header>
+      <h1>
+        <img src="images/icon-tall-square-fixed-300-transparent.png" alt="Lansing Codes logo">
+        <input type="text" id="eventInput" class="eventInput" value="Lansing Tech Demo Night">
+        <span class="eventPrint">Lansing Tech Demo Night</span>
+      </h1>
+    </header>
+    <article>
+      <header>
+        <h3>
+          Name
+          <sub>&nbsp;</sub>
+        </h3>
+        <h3>
+          Email
+          <sub>(for our monthly newsletter)</sub>
+        </h3>
+      </header>
+      <section class="row" data-repeat="19">
+        <div class="line-number">1</div>
+        <div class="line"></div>
+        <div class="line"></div>
+      </section>
+    </article>
+    <footer>
+      Discover more tech events at
+      <a href="https://www.lansing.codes">
+        www.lansing.codes
+      </a>
+    </footer>
+  </main>
+  <script src="script.js"></script>
+</body>
+
+</html>

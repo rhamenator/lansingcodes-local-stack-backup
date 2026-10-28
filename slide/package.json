@@ -1,0 +1,31 @@
+{
+  "name": "slide.lansing.codes",
+  "version": "1.0.0-alpha",
+  "description": "Welcome slide generator for Lansing tech events",
+  "contributors": [
+    "Joe Ryan",
+    "Erik Gillespie",
+    "Vincent Maule",
+    "Kristen Belcher"
+  ],
+  "scripts": {
+    "start": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lansingcodes/slide.git"
+  },
+  "license": "Hippocratic-2.1",
+  "bugs": {
+    "url": "https://github.com/lansingcodes/slide/issues"
+  },
+  "homepage": "https://github.com/lansingcodes/slide#readme",
+  "devDependencies": {
+    "vite": "^7.3.7"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.8"
+  }
+}

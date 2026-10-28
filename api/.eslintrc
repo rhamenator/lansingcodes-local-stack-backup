@@ -1,0 +1,16 @@
+{
+  "root": true,
+  "env": {
+    "browser": false,
+    "node": true,
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script",
+  },
+  "extends": ["plugin:prettier/recommended"],
+  "plugins": ["prettier"],
+  "rules": {
+    "no-console": "off",
+  },
+}

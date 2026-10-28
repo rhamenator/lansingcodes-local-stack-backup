@@ -1,0 +1,11 @@
+.row{
+    margin-top: 1rem;
+}
+.col{
+    padding: 10px 15px;
+}
+.responsive {
+    width: 100%;
+    max-width: 300px;
+    height: auto;
+}

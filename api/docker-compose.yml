@@ -1,0 +1,33 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - FIREBASE_PROJECT=lansingcodes-dev
+      - FIRESTORE_EMULATOR_HOST=firebase:8085
+      - SYNC_SECRET
+      - DATA_SYNC_OWNER
+    depends_on:
+      - firebase
+
+  firebase:
+    build:
+      context: .
+      dockerfile: Dockerfile.firebase
+    volumes:
+      - .:/firebase
+      - firebase-cache:/root/.cache/firebase/emulators
+    ports:
+      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:8085:8085"
+      - "127.0.0.1:9099:9099"
+
+volumes:
+  firebase-cache:

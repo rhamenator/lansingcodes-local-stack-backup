@@ -1,0 +1,11 @@
+# Local credentials and generated files must remain outside this backup.
+**/.env
+**/.env.local
+**/.env.production
+**/.env.development
+**/*.pem
+**/*.key
+**/node_modules/
+**/.firebase/
+**/firebase-debug.log
+**/firestore-debug.log

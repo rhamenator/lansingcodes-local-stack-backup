@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -e
+
+cd "$(dirname "$0")/.."
+export TZ="${TZ:-America/Detroit}"
+export HUBOT_ALIAS="${HUBOT_ALIAS:-slackbot}"
+exec ./node_modules/.bin/hubot --name "slackbot" "$@"

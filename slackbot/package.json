@@ -1,0 +1,67 @@
+{
+  "name": "slackbot",
+  "version": "1.0.0",
+  "license": "Hippocratic-2.1",
+  "private": true,
+  "author": "Michigan Technology Network",
+  "contributors": [
+    "Amanda Kitson",
+    "Andrew Tomaka",
+    "Bret Self",
+    "Chris Fritz",
+    "Erik Gillespie <erik.gillespie@gmail.com>",
+    "James Green",
+    "Joe Ryan",
+    "Patrick Hawkins",
+    "Eric Slenk <lucid.machine@gmail.com>",
+    "Ryan Lode <rlode24@gmail.com>"
+  ],
+  "description": "Lansing Code's helpful, neighborhood Slack robot",
+  "dependencies": {
+    "@hubot-friends/hubot-slack": "^3.8.0",
+    "coffeescript": "^1.12.7",
+    "cron": "^1.7.1",
+    "firebase": "^13.1.0",
+    "hubot": "^14.1.1",
+    "hubot-appearin": "^1.0.2",
+    "hubot-bikeshed": "^1.3.0",
+    "hubot-darts": "^1.0.2",
+    "hubot-diagnostics": "^2.1.3",
+    "hubot-help": "^2.1.5",
+    "hubot-heroku-keepalive": "^1.0.3",
+    "hubot-maps": "0.0.3",
+    "hubot-principles": "^1.0.0",
+    "hubot-rules": "^2.1.1",
+    "hubot-shipit": "^0.2.1",
+    "hubot-thank-you": "0.0.3",
+    "moment": "^2.29.4",
+    "twitter-api-v2": "^1.31.0"
+  },
+  "scripts": {
+    "start": "bin/hubot --adapter @hubot-friends/hubot-slack",
+    "start:local": "node --env-file=.env ./node_modules/hubot/bin/hubot --name slackbot --adapter @hubot-friends/hubot-slack",
+    "fix": "standard --env jasmine --global robot --global hubotHelpers --fix",
+    "lint": "standard --env jasmine --global robot --global hubotHelpers",
+    "precommit": "run-s lint test",
+    "test": "jasmine",
+    "test:stack": "bash scripts/run-local-stack-smoke.sh",
+    "start:slack-test": "bash scripts/run-live-slack-test.sh"
+  },
+  "devDependencies": {
+    "jasmine": "^3.6.2",
+    "npm-run-all": "^4.1.5",
+    "proxyquire": "^2.1.3",
+    "standard": "^17.1.2"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "standard": {
+    "env": [
+      "jasmine"
+    ]
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6"
+  }
+}

@@ -1,0 +1,44 @@
+// Description:
+//   Generates welcome emails for today's events which are organized by the current user.
+//
+// Dependencies:
+//   "@firebase/firestore"
+//   "moment"
+//   "tinyurl"
+//
+// Configuration:
+//   N/A
+//
+// Commands:
+//   hubot email - Generates welcome emails for today's events organized by the current user.
+//
+// Notes:
+//   N/A
+//
+// Author:
+//   egillespie
+
+const isToday = require('../helpers/is-today')
+const organizerFor = require('../helpers/organizer-for')
+const generateWelcomeEmailFor = require('../helpers/generate-welcome-email-for')
+const getEventsFetcher = require('../fetchers/events-fetcher')
+
+module.exports = robot => {
+  robot.respond(/(?:welcome )?emails?/i, message => {
+    getEventsFetcher(robot)
+      .then(eventsFetcher => eventsFetcher.upcoming())
+      .then(events => {
+        const currentUser = message.envelope.user
+        events.forEach(event => {
+          const organizer = organizerFor(event.group)
+          if ((currentUser.id === organizer || currentUser.name === organizer) && isToday(event)) {
+            generateWelcomeEmailFor(event, robot)
+          }
+        })
+      })
+      .catch(error => {
+        robot.logger.error(`Could not load events for welcome emails: ${error.message}`)
+        message.send('I could not load upcoming events right now.')
+      })
+  })
+}
