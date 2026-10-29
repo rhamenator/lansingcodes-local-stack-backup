@@ -90,7 +90,9 @@ Each developer sets up their own Firebase project for local development.
 
 1. In the left sidebar, click **Firestore Database** (under Databases).
 2. Click **Create database**.
-3. Choose **Start in test mode** for local development, then click **Next**.
+3. Choose **Start in production mode**, then click **Next**. The server-side
+   Firebase Admin SDK can still access Firestore with its service account;
+   test mode would allow public clients to read and overwrite data.
 4. Pick any region and click **Enable**.
 
 **3. Get service account credentials**
@@ -158,9 +160,19 @@ npm run sync:sponsors  # just sponsors
 
 These scripts automatically read `SYNC_SECRET` from your `.env.local` file.
 
+Run `npm test` and `npm run test:stack` before changing the sync code. The stack
+test needs the Firebase CLI on `PATH` or via `FIREBASE_BIN`; it uses a local
+demo Firestore emulator and never writes to staging or production. Event sync
+fetches every Meetup calendar before modifying Firestore. If a feed is
+unavailable or malformed, the sync fails and leaves the existing event
+collection in place. The scheduled function reports missing credentials and
+rejected sync requests as failures; check its Netlify function logs after a
+deployment or a manual **Run now**.
+See [sync rollout and recovery](docs/sync-rollout.md) before a production sync.
+
 ## Other scripts
 
-Build for production (also runs TypeScript type checking):
+Build for production (also runs lint, tests, and TypeScript type checking):
 
 ```sh
 npm run build
@@ -172,15 +184,6 @@ Verify your code passes linting rules:
 npm run lint
 ```
 
-Run `npm test` for the calendar sync safety checks. A failed Meetup feed or
-malformed calendar now aborts event replacement so existing events stay in
-Firestore. For an isolated integration check, set
-`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085` and
-`FIREBASE_PROJECT_ID=lansingcodes-dev` when starting the site, then run the
-sync against a local Firestore emulator. No service account is needed for the
-emulator. Keep one writer for `events` and `groups` in each environment; the
-older `api` repository also contains sync functions.
-
 ## Deployments
 
 After a pull request is reviewed and merged to `main`, Netlify automatically
@@ -190,7 +193,8 @@ manually triggered [Deploy to production](.github/workflows/deploy-production.ym
 GitHub Actions workflow after its required environment approval. An admin
 confirmed on October 22, 2026 that this `website` repository had replaced the
 older `www` and `api` repositories in production. The Netlify scheduled function
-runs every 2 hours to sync the latest Meetup events into Firestore.
+runs every 2 hours to sync the latest Meetup events, groups, and sponsors into
+that site's Firestore project.
 
 For both staging and production, Netlify runs `npm run build` and deploys the
 resulting `.next` directory via `@netlify/plugin-nextjs`.

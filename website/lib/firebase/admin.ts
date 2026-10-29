@@ -1,5 +1,5 @@
 import { cert, getApps, initializeApp, type App } from 'firebase-admin/app'
-import { getFirestore as firestoreForApp } from 'firebase-admin/firestore'
+import { getFirestore as adminGetFirestore } from 'firebase-admin/firestore'
 
 const APP_NAME = 'lansing-codes'
 
@@ -49,5 +49,5 @@ export function getFirebaseAdmin(): App {
 }
 
 export function getFirestore() {
-  return firestoreForApp(getFirebaseAdmin())
+  return adminGetFirestore(getFirebaseAdmin())
 }

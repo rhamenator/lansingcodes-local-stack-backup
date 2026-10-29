@@ -12,8 +12,8 @@ export async function fetchEventsForGroup(
 ): Promise<Record<string, unknown>> {
   if (!group.slug) return {}
 
-  // A failed feed must abort the sync. Returning no events would make the
-  // full-replace sync delete this group's existing Firestore events.
+  // A failed feed must abort the full-replacement sync before it deletes
+  // this group's existing Firestore events.
   const response = await getCalendar(`/${group.slug}/events/ical/`)
   return icalToEvents(groupKey, response.data)
 }

@@ -25,3 +25,9 @@ The source branch, base commit, and changed paths for each folder are recorded i
 Copy the needed subfolder into a fresh checkout of its matching Lansing Codes repository, then review the diff against the base commit in the manifest. The folders here are snapshots rather than independent Git repositories.
 
 Authentication tokens and API secrets remain in the owner’s GNOME Keyring and are not part of this backup.
+
+The `staging/website-safe-sync` branch is a separate staging candidate. It
+combines the tested website security and safe-sync PR changes with the mobile
+event title contrast fix in this backup. Its `website/` folder can be deployed
+to the owner's isolated Firebase project `lansing-codes-test-staging` after
+local verification; the branch does not change Lansing Codes production.
