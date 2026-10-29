@@ -168,7 +168,7 @@ recorded in comments on [website #18](https://github.com/lansingcodes/website/pu
 [website #19](https://github.com/lansingcodes/website/pull/19#issuecomment-6485935525),
 and [slackbot #100](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6485938134).
 
-## Compatibility with unchanged production source (October 28, 2026)
+## Compatibility with current `main` source (October 28, 2026)
 
 Fresh, separate worktrees preserve the contributor branches: website `main`
 at `38bacdd` in `/home/rich/dev/lansingcodes-production-website-2026-10-28`
@@ -207,3 +207,28 @@ verify Heroku config and restarts, Slack scopes and membership, persistent
 notification permissions, scheduled jobs, and retained external commands.
 Website PR #19 remains stacked on #18; retarget it to `main` after #18 merges
 so its CI checks run on the intended merge result.
+
+## Last recorded production website deployment revision
+
+GitHub's latest successful `Deploy to production` workflow run was
+[October 22/23, 2026](https://github.com/lansingcodes/website/actions/runs/39888382971)
+at website commit `e7934a0`. Current website `main` is `38bacdd`; the commits
+between them change the newsletter subscription endpoint and dependencies,
+not event sync source. A separate clean worktree at `e7934a0` is preserved at
+`/home/rich/dev/lansingcodes-deployed-website-2026-10-22`.
+
+At that exact last recorded deployment commit, `npm ci`, lint, and build
+passed. Its lockfile has 36 npm audit findings (3 critical, 18 high). Using
+only a dummy credential and `demo-lansingcodes-deployed` Firestore emulator,
+the website's `/api/sync/all` returned HTTP 200 and wrote 5 events, 11 groups,
+and 7 sponsors. PR #100's actual Hubot handlers answered `upcoming events`
+and `next ai event` from those records. Its eight-check stack smoke also
+passed using that website revision's installed Firebase Admin dependency,
+including persisted notifications across a simulated restart.
+
+This validates PR #100 against the **last recorded production website source**
+locally. The workflow record does not exclude a later direct Netlify deploy,
+and the repository exposes no Heroku deployment SHA. Therefore, the exact
+versions currently running in Netlify and Heroku remain unconfirmed until an
+administrator checks those dashboards. No production credentials or data were
+used in this rehearsal.
