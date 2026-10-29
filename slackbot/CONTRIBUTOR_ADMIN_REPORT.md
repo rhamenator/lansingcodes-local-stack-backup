@@ -302,3 +302,25 @@ variables, or buildpack mode. An admin can provide read-only app access for
 stack/release/dyno inspection or a redacted configuration inventory; config
 values require broader app permissions and should not be pasted into this
 report.
+
+### Unchanged `main` startup check (October 28, 2026)
+
+I separately archived the current organization `slackbot/main` commit
+`4d1c373b72881a49f9f01c960dcddc486c2f305a` without local edits and built
+it with the same official `heroku/builder:24` builder. The image built and
+selected Node 24.22.1, but launching its declared `web: bin/hubot --adapter
+slack` process exited immediately with `bash: line 1: bin/hubot: Permission
+denied` (exit 126). Git tracks `bin/hubot` as mode `100644`; the archive and
+built image also lack execute permission. This is a reproducible startup
+failure for **current `main` on the tested Heroku-24 buildpack path**. PR #100
+uses `web: npm start`, and its built image started and handled a live Slack
+command as recorded above. The organization's actual deployed Heroku release,
+stack, and build mode are still unknown, so this test does not establish that
+the currently running bot has this failure. The result is also recorded in
+[PR #100's baseline test note](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6487235033).
+
+Before deploying, an admin should identify the app's release commit, stack,
+build mode, dyno type, and process command. If they deploy unchanged `main` on
+this build path, they must make `bin/hubot` executable or change the Procfile
+to invoke it through a shell. Merging PR #100 supplies a separately tested
+startup path, subject to its documented environment and integration checks.
