@@ -1,6 +1,6 @@
 # Lansing Codes local stack backup
 
-This private repository is a snapshot of the local contributor workspaces on October 28, 2026. Each top-level subfolder contains the working files for one Lansing Codes repository, including local edits and non-ignored untracked files. The source `.git` directories and ignored build artifacts are excluded. No changes are pushed to the Lansing Codes repositories.
+This public repository is a snapshot of the local contributor workspaces on October 28, 2026. Each top-level subfolder contains the working files for one Lansing Codes repository, including local edits and non-ignored untracked files. The source `.git` directories and ignored build artifacts are excluded. Proposed changes to Lansing Codes repositories are reviewed through separate pull requests; this backup does not deploy to Lansing Codes production.
 
 The source branch, base commit, and changed paths for each folder are recorded in [SNAPSHOT_MANIFEST.json](SNAPSHOT_MANIFEST.json). The contributor/admin report is in [slackbot/CONTRIBUTOR_ADMIN_REPORT.md](slackbot/CONTRIBUTOR_ADMIN_REPORT.md).
 
@@ -26,8 +26,9 @@ Copy the needed subfolder into a fresh checkout of its matching Lansing Codes re
 
 Authentication tokens and API secrets remain in the owner’s GNOME Keyring and are not part of this backup.
 
-The `staging/website-safe-sync` branch is a separate staging candidate. It
+The `staging/website-safe-sync` branch is the source for the owner's isolated
+Netlify site at <https://lansingcodes-test-staging-rhamenator.netlify.app/>. It
 combines the tested website security and safe-sync PR changes with the mobile
-event title contrast fix in this backup. Its `website/` folder can be deployed
-to the owner's isolated Firebase project `lansing-codes-test-staging` after
-local verification; the branch does not change Lansing Codes production.
+event title contrast fix in this backup. Its `website/firestore.rules` is for
+the owner's `lansing-codes-test-staging` Firebase project. Neither this site
+nor those rules change Lansing Codes production.

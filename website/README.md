@@ -95,6 +95,14 @@ Each developer sets up their own Firebase project for local development.
    test mode would allow public clients to read and overwrite data.
 4. Pick any region and click **Enable**.
 
+If Slackbot or another public client must read the synced data, deploy
+`firestore.rules` to that **specific** Firebase project after running
+`npm run test:rules`. The rules allow public reads only for `events`, `groups`,
+and `sponsors`; client writes and reads of all other collections are denied.
+Do not deploy these rules to a different project without reviewing its data
+model and existing rules. The Admin SDK used by the website bypasses client
+security rules.
+
 **3. Get service account credentials**
 
 1. In the left sidebar, click **Settings** (the gear icon).

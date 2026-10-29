@@ -1,7 +1,7 @@
 # Lansing Codes: local slackbot and stack repair report
 
 **Prepared:** October 28, 2026  
-**Status:** Changes to the Lansing Codes repositories remain local, in separate branches of the fresh checkout. An earlier copy of this report was shared on Lansing Codes Slack. A snapshot is also saved in the contributor's private [stack backup](https://github.com/rhamenator/lansingcodes-local-stack-backup). No changes have been pushed to the Lansing Codes repositories, deployed, or submitted as a PR.
+**Status:** This report began as a local snapshot; it now includes a dated personal staging addendum at the end. An earlier copy was shared on Lansing Codes Slack. The contributor's [stack backup](https://github.com/rhamenator/lansingcodes-local-stack-backup) is public. Proposed website changes are in [PR #18](https://github.com/lansingcodes/website/pull/18) and [PR #19](https://github.com/lansingcodes/website/pull/19); proposed Slackbot changes are in [PR #100](https://github.com/lansingcodes/slackbot/pull/100). No Lansing Codes production deployment was made by this work.
 
 ## Summary
 
@@ -125,4 +125,31 @@ GitHub Code Scanning reported one **fixed** alert in `website` and no analysis f
 - Confirm current Slack app scopes, channel membership, organizer and welcomer IDs, Twitter/X test credentials, persistent brain storage, and monitored restart behavior.
 - Verify `website` is the only production Firestore sync owner, check the Slack shared invite in a browser, and confirm legacy app retirement before a coordinated deployment.
 
-The earlier report was shared on Slack by the contributor. This revised copy and code changes remain unpublished to the Lansing Codes repositories; a private contributor backup holds a snapshot. The original `tinyurl-hardening` checkout remains untouched. No PR has been created.
+The earlier report was shared on Slack by the contributor. Later PRs and personal staging results are recorded above. The original `tinyurl-hardening` checkout remains untouched.
+# Personal staging verification (October 28, 2026)
+
+The contributor created a **separate personal test environment**. Firebase
+project `lansing-codes-test-staging` and Netlify site
+<https://lansingcodes-test-staging-rhamenator.netlify.app/> are owned by the
+contributor; neither is Lansing Codes production or the organization's
+staging deployment. The Netlify site uses the `staging/website-safe-sync`
+branch of the public `rhamenator/lansingcodes-local-stack-backup` repository.
+The site is currently deployed through Netlify CLI, without a Git link.
+
+Local website checks passed: lint, nine unit tests, Next build, Firestore
+emulator sync safety test, and a zero-finding npm audit. A separate Firestore
+rules emulator test confirmed public reads of `events`, `groups`, and
+`sponsors`, denial of client writes, and denial of other collection reads.
+These rules were published **only** to the personal Firebase project. A live
+Firebase client then read 5 events, 11 groups, and 7 sponsors; a private read
+and client write were denied. The Netlify `scheduled-sync` function ran on
+Node 22 and reported success, and an unauthenticated `/api/sync/all` request
+returned HTTP 401. A local PR #100 bot connected to the separate Lansing Codes
+System Slack workspace, read a temporary `stagingcheck` event from the
+personal Firebase project, and returned its unique event link in response to
+`next stagingcheck event`. The temporary event was removed afterward.
+
+The website and bot PRs should identify this as **personal staging evidence**,
+not as a production validation. Administrators still need to run their own
+deployment and acceptance checks against Lansing Codes' managed staging and
+production environments.
