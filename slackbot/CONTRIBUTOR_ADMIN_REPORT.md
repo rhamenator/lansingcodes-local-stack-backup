@@ -153,3 +153,17 @@ The website and bot PRs should identify this as **personal staging evidence**,
 not as a production validation. Administrators still need to run their own
 deployment and acceptance checks against Lansing Codes' managed staging and
 production environments.
+
+To isolate merge dependencies, a clean local checkout of the current
+`lansingcodes/website` `main` (`38bacdd`) merged website PR #18 (`6827e42`)
+and then PR #19 (`c1dfd83`) without conflicts. On that exact merge result,
+`npm ci`, `npm run build` (lint plus 9 unit tests), `npm run test:stack`, and
+`npm audit --audit-level=low` passed with 0 audit findings. Slackbot PR #100's
+8-check stack smoke also passed against that merged website checkout,
+including the notification restart check. PR #19 is based on #18, so #18 must
+merge first and #19 must then be retargeted to `main`. The personal staging
+site includes an additional mobile title contrast fix and does not represent
+the exact code of either organization PR by itself. Verification details are
+recorded in comments on [website #18](https://github.com/lansingcodes/website/pull/18#issuecomment-6485931011),
+[website #19](https://github.com/lansingcodes/website/pull/19#issuecomment-6485935525),
+and [slackbot #100](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6485938134).
