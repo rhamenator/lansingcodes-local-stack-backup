@@ -324,3 +324,30 @@ build mode, dyno type, and process command. If they deploy unchanged `main` on
 this build path, they must make `bin/hubot` executable or change the Procfile
 to invoke it through a shell. Merging PR #100 supplies a separately tested
 startup path, subject to its documented environment and integration checks.
+
+## Personal Heroku app rehearsal (October 29, 2026)
+
+The contributor created `rhamenator-slackbot` in their own Heroku account,
+in the US region on `heroku-24`. Git push of PR #100 commit `454ba8d` built
+with Heroku's Node.js buildpack, resolved Node 24.22.1 and npm 11.19.1,
+pruned development dependencies, and released slug `v4` with
+`web: npm start`. Heroku reported one Basic `web.1` dyno up. Seven app config
+values were loaded from the contributor's GNOME keyring and local staging
+configuration without printing their values; they target only the Lansing
+Codes System test Slack workspace and `lansing-codes-test-staging` Firebase
+project. The four X publishing credentials were omitted.
+
+Inside a Heroku one-off dyno, `deployment-preflight.js` passed the expected
+Slack workspace and Firebase project checks, found three upcoming events and
+zero notification keys, and completed its temporary notification write,
+read, and delete check. With no local bot process running, the test app
+answered [`next ai event`](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793248882854539)
+in `#upcoming-events` with the AI Office Hours event from staging Firestore.
+This confirms this PR commit can build, boot, read staging data, persist
+notification state, and answer a live Slack command on the contributor's
+Heroku app. The organization's Heroku app, release, configuration, and
+production Slack workspace remain uninspected.
+After the live check, the contributor ran `heroku ps:scale web=0` and
+`heroku ps` reported `No dynos` on the personal app. The
+[PR #100 test note](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6488149257)
+records the Heroku build, preflight, Slack reply, and shutdown.
