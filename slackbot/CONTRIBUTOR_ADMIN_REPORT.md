@@ -232,3 +232,37 @@ and the repository exposes no Heroku deployment SHA. Therefore, the exact
 versions currently running in Netlify and Heroku remain unconfirmed until an
 administrator checks those dashboards. No production credentials or data were
 used in this rehearsal.
+
+## Production-style personal staging rehearsal (October 28, 2026)
+
+PR #100 was started with `NODE_ENV=production`, Node 24, `npm start`, a bound
+`PORT`, the Lansing Codes System test Slack app, and the contributor-owned
+`lansing-codes-test-staging` Firebase project. `NOTIFICATION_STORE` and
+`FIRESTORE_EMULATOR_HOST` were unset so the real Firestore notification store
+was used. In `#upcoming-events`, the live bot answered [`next ai event`](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793241139994169)
+from personal staging Firestore. After stopping and restarting the process, it
+reconnected and answered [`next devops event`](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793241277128199).
+A separate two-process test wrote one uniquely named notification key to the
+personal Firestore `slackbot_notifications` collection, read it from a fresh
+process, and deleted that exact test record. This proves the persistent store
+primitive, but the live scheduled announcement and its duplicate suppression
+were not exercised against the cloud project; those paths passed in the local
+Firestore emulator stack smoke.
+
+PR #100 adds `npm run preflight -- --expect-project PROJECT --expect-team TEAM`
+for administrators. It checks the intended Slack workspace, matching Firebase
+reader and writer project IDs, upcoming event reads, and notification-store
+reads. `--write-check` additionally writes, verifies, and removes one unique
+notification record. It does not post to Slack or validate the Socket Mode app
+token. The preflight passed against the personal workspace and project with
+the write check enabled and exited cleanly. Guardrail unit tests covered
+project mismatches and accidental emulator or memory settings. On Node 24,
+lint, 60 unit specs, legacy command smoke, the eight-check local stack smoke,
+and `npm audit --audit-level=low` (0 findings) passed before submission.
+
+This is contributor-owned staging evidence. Administrators still need to
+confirm the Heroku app's actual deployed revision, config vars, stack, Slack
+app scopes and membership, and managed-staging scheduler behavior before
+calling PR #100 production validated.
+The latest [PR #100 test note](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6486381570)
+records the commands, live replies, and limits of this rehearsal.
