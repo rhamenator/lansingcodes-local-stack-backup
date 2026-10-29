@@ -275,3 +275,30 @@ upcoming events and zero notification keys. The [PR #100 follow-up note](https:/
 contains the test details. This proves the scheduled delivery and duplicate
 suppression path with personal cloud services, while Heroku and the
 organization's managed Firebase project remain to be checked by admins.
+
+## Local Heroku-24 buildpack rehearsal (October 28, 2026)
+
+A clean Git archive of Slackbot PR #100 commit `454ba8d` built successfully
+with the official `heroku/builder:24` Cloud Native Buildpack. It detected the
+Node and Procfile buildpacks, resolved Node 24.22.1, ran `npm ci`, pruned
+development dependencies, and exported `web: npm start` on the
+`heroku/heroku:24` runtime image. That image connected to the separate Lansing
+Codes System Slack workspace under `NODE_ENV=production` and a 512 MB memory
+limit. It answered a live [`next ai event`](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793242621854749)
+command from the personal staging Firestore project. The preflight, executed
+inside the built image with `--write-check`, passed and removed its temporary
+notification record. The container was stopped; the image remains local for
+repeat testing. [PR #100 records the test](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6486676242).
+
+This is a Heroku-24 buildpack approximation, not a claim about the Lansing
+Codes Heroku app. The repository's CircleCI config deploys `main` through the
+Heroku orb after a successful build, but its app name and live config are held
+outside the repository. The two publicly visible recent `main` workflows
+([October 7](https://circleci.com/gh/lansingcodes/slackbot/403) and
+[October 28](https://circleci.com/gh/lansingcodes/slackbot/405)) failed their
+build jobs, so their deploy jobs did not run. We do not have authenticated
+Heroku access to confirm the current release SHA, stack, dyno size, config
+variables, or buildpack mode. An admin can provide read-only app access for
+stack/release/dyno inspection or a redacted configuration inventory; config
+values require broader app permissions and should not be pasted into this
+report.
