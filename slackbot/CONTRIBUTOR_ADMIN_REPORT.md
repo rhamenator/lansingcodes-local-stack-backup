@@ -2,6 +2,7 @@
 
 **Prepared:** October 28, 2026  
 **Status:** This report began as a local snapshot; it now includes a dated personal staging addendum at the end. An earlier copy was shared on Lansing Codes Slack. The contributor's [stack backup](https://github.com/rhamenator/lansingcodes-local-stack-backup) is public. Proposed website changes are in [PR #18](https://github.com/lansingcodes/website/pull/18) and [PR #19](https://github.com/lansingcodes/website/pull/19); proposed Slackbot changes are in [PR #100](https://github.com/lansingcodes/slackbot/pull/100). No Lansing Codes production deployment was made by this work.
+An independent event-card contrast fix is in [website PR #20](https://github.com/lansingcodes/website/pull/20).
 
 ## Summary
 
@@ -351,3 +352,15 @@ After the live check, the contributor ran `heroku ps:scale web=0` and
 `heroku ps` reported `No dynos` on the personal app. The
 [PR #100 test note](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6488149257)
 records the Heroku build, preflight, Slack reply, and shutdown.
+
+## Website event-card contrast (October 29, 2026)
+
+An independent fix based on current `website/main` is in
+[PR #20](https://github.com/lansingcodes/website/pull/20). The unlayered global
+link style overrode a Tailwind `text-white` utility in event-card titles.
+The PR gives those links white text in normal, hover, and focus states and a
+visible keyboard focus outline. On Node 22, lint and the production build
+passed. The exact branch served the three personal staging events locally;
+at a narrow mobile viewport, the browser showed readable white titles on the
+dark blue cards and computed the link color as `rgb(255, 255, 255)`.
+This PR targets `main` directly and does not depend on website PRs #18 or #19.
