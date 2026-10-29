@@ -86,7 +86,7 @@ These checks show that the local code loads and its tested paths work. They do n
 1. **Verify the production `website` data sync.** The admin identified [`website`](https://github.com/lansingcodes/website) as the deployed site and replacement for `api` and `www`. Its Netlify scheduled function calls `/api/sync/all` every two hours and its own routes write Firestore. The website sync now aborts on failed or invalid Meetup feeds so it will not delete existing events on a partial fetch. Confirm that the production schedule, credentials, and monitoring work, and compare Firestore counts before and after a staging rehearsal. The old `api` writer should remain inactive; if its endpoint is still reachable, identify callers before disabling it.
 2. **Complete test workspace configuration.** The isolated Slack app and basic event replies work. Continue testing channel membership, member join notices, organizer emails, and current ID mappings, then have admins approve corresponding production IDs and scopes. The bot needs membership in the channels it posts to, or `chat:write.public` where appropriate. Slack documents [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/), [channel posting](https://docs.slack.dev/reference/methods/chat.postMessage/), and [Conversations API scopes](https://docs.slack.dev/reference/methods/conversations.list/).
 3. **Verify the remaining commands in a test workspace.** Event replies, cross channel references, and X posting to the test account passed live checks. Test scheduled reminders, new participant notices, welcome template delivery, the eight retained legacy packages, and the three replacement commands. Their local smoke test passed, but external service behavior and Slack permissions remain unverified. Confirm that Jitsi room creation works with the organization's chosen host account and that Google Maps links meet the requested map-style behavior.
-4. **Review event content and persistence.** The welcome email still contains old venue, food, phone, and topic placeholders. Admins should update the copy and current organizer mappings. The event notification cache is stored in Hubot's brain; verify a persistent brain is configured on the deployment or repeated announcements may occur after a restart. This may require Redis or another shared store.
+4. **Review event content and persistence.** The welcome email still contains old venue, food, phone, and topic placeholders. Admins should update the copy and current organizer mappings. PR #100 stores notification keys in the Firestore `slackbot_notifications` collection. Give the Heroku service account read/write access to that collection and verify it against the organization's managed staging project; no separate persistent Hubot brain is needed for event announcements.
 5. **Validate deployment.** Use Node 24 in the hosting environment, provide secrets through host configuration, and confirm process restart after a missed Slack reconnect. The local branch updates CircleCI, but its Heroku deployment job and the production host were not exercised. Heroku currently supports Node 24 and recommends specifying the major version in `engines` ([Heroku Node support](https://devcenter.heroku.com/articles/nodejs-support)).
 6. **Plan to replace the remaining legacy plugin packages.** Eight still use the CoffeeScript compatibility loader; several declare peer support only for older Hubot versions. `.npmrc` uses `legacy-peer-deps=true` so clean installs are reproducible. The local smoke test captures representative behavior. Replace or maintain the packages as modern Hubot modules after full acceptance tests, then remove this compatibility setting.
 7. **Keep the `api` repair as a contingency, not a deployment step.** Its local branch fixes the emulator port, packaging, and authentication, and the Docker Compose rehearsal passed an authorized write and writer-disabled check. The admin says this repository is no longer used in production. Do not deploy it alongside `website`; retain the repair only if a remaining caller or rollback plan requires it. If an old API deployment still exists, retire it after checking callers and revoking unneeded secrets.
@@ -96,7 +96,7 @@ These checks show that the local code loads and its tested paths work. They do n
 
 1. **Verify the current writer and protect data.** `website` is the production writer for `events`, `groups`, and `sponsors`; its output passed the emulator contract test. Back up Firestore before any production full-replacement sync. Rehearse changes in staging, compare document counts and representative records, and confirm that slackbot and newsletter-events still read them. Confirm the website's two-hour scheduled sync actually runs and that failures are monitored. Check whether an old `api` deployment is still reachable and disable it after confirming no callers remain.
 2. **Finish the isolated live tests.** The separate Slack workspace and app are configured; both event commands, cross channel references, and a public X test post passed. Complete the remaining Slack commands and joins. Keep API credentials in an owner-only keyring, never in a repository or this report.
-3. **Run acceptance checks before a PR.** Exercise core messages, channel references, joins, reminders, organizer emails, tweet approval/posting, reconnects, and the eleven legacy capabilities in the test workspace. Restart the bot and verify reminders are not repeated; configure a persistent Hubot brain if needed. Replace any remaining script whose external service no longer works while preserving its user-facing purpose.
+3. **Run acceptance checks before a PR.** Exercise core messages, channel references, joins, reminders, organizer emails, tweet approval/posting, reconnects, and the eleven legacy capabilities in the test workspace. Restart the bot and verify reminders are not repeated using Firestore notification history. Replace any remaining script whose external service no longer works while preserving its user-facing purpose.
 4. **Review and release in stages.** Have admins review the local branches and report, then authorize PRs. Run CI and dependency audits on the proposed revisions. A merge to `website/main` deploys to Netlify staging; its `Deploy to production` GitHub Actions workflow manually deploys `main` to the Netlify production site after required environment approval. Verify secrets, function authorization, scheduled sync, and bot restart behavior in staging. Promote with a Firestore backup and rollback plan after staging passes. Deploy slackbot separately with Node 24.
 5. **Close legacy risk.** Confirm no deployment or clients still depend on old `api`, `www`, or `slackin` routes, including badges. Archive or remove their deploys only after that check; otherwise migrate the remaining feature first. Treat legacy repository advisories as retirement work and prioritize code scanning on the active `website` and `slackbot` repositories.
 
@@ -244,10 +244,7 @@ from personal staging Firestore. After stopping and restarting the process, it
 reconnected and answered [`next devops event`](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793241277128199).
 A separate two-process test wrote one uniquely named notification key to the
 personal Firestore `slackbot_notifications` collection, read it from a fresh
-process, and deleted that exact test record. This proves the persistent store
-primitive, but the live scheduled announcement and its duplicate suppression
-were not exercised against the cloud project; those paths passed in the local
-Firestore emulator stack smoke.
+process, and deleted that exact test record.
 
 PR #100 adds `npm run preflight -- --expect-project PROJECT --expect-team TEAM`
 for administrators. It checks the intended Slack workspace, matching Firebase
@@ -266,3 +263,15 @@ app scopes and membership, and managed-staging scheduler behavior before
 calling PR #100 production validated.
 The latest [PR #100 test note](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6486381570)
 records the commands, live replies, and limits of this rehearsal.
+
+An additional cloud-backed scheduled task check used one temporary event in
+the personal Firebase project. The first local Node 24 process ran PR #100's
+actual `check-for-upcoming-events` module and posted the [event announcement](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793241735134979)
+through Slack's Web API. A second process read Firestore notification history
+and posted [no new meetups](https://lansingcodessystem.slack.com/archives/C0CCS5NLDEW/p1793241742212559)
+without repeating the event announcement. The temporary event and 16 test
+notification keys were removed. A final preflight showed the original three
+upcoming events and zero notification keys. The [PR #100 follow-up note](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6486426613)
+contains the test details. This proves the scheduled delivery and duplicate
+suppression path with personal cloud services, while Heroku and the
+organization's managed Firebase project remain to be checked by admins.
