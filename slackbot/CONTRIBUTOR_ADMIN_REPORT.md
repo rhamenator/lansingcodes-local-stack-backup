@@ -167,3 +167,43 @@ the exact code of either organization PR by itself. Verification details are
 recorded in comments on [website #18](https://github.com/lansingcodes/website/pull/18#issuecomment-6485931011),
 [website #19](https://github.com/lansingcodes/website/pull/19#issuecomment-6485935525),
 and [slackbot #100](https://github.com/lansingcodes/slackbot/pull/100#issuecomment-6485938134).
+
+## Compatibility with unchanged production source (October 28, 2026)
+
+Fresh, separate worktrees preserve the contributor branches: website `main`
+at `38bacdd` in `/home/rich/dev/lansingcodes-production-website-2026-10-28`
+and slackbot `main` at `4d1c373` in
+`/home/rich/dev/lansingcodes-production-slackbot-2026-10-28`. The original
+`~/dev/lansingcodes/website` and `~/dev/lansingcodes/slackbot` main checkouts
+were fast-forwarded to those revisions; the untracked `.history` folder in
+the latter was preserved. No proposed source files were swapped into either
+production worktree.
+
+- The unchanged website passed `npm ci`, lint, and Next build on Node 22. Its
+  current lockfile has 14 npm audit findings (6 high, 8 moderate). A local
+  instance used a dummy credential and `demo-lansingcodes` Firestore emulator;
+  its authenticated `/api/sync/all` returned HTTP 200 and wrote 5 events, 11
+  groups, and 7 sponsors. The event fields were `address`, `description`,
+  `group`, `id`, `name`, `startTime`, `url`, and `venue`. The rendered page
+  returned HTTP 200; unauthorized sync returned HTTP 401.
+- PR #100's actual event fetcher and Hubot handlers read those unchanged
+  website-written records from the emulator. `upcoming events` and
+  `next ai event` both replied successfully. PR #100's eight-check stack
+  smoke passed against the unchanged website's installed Firebase Admin SDK,
+  including notification persistence through a simulated restart. Its
+  current branch passed lint, 57 unit specs, legacy-command smoke, and audit
+  with 0 findings on Node 24.
+- In the reverse direction, the unchanged production slackbot fetcher read
+  three upcoming records from the contributor-owned staging Firestore, which
+  the updated website had populated. Required event fields were present.
+  The unchanged slackbot's own baseline suite had 19 specs with one TinyURL
+  failure, and its current lockfile had 39 npm audit findings (8 critical).
+
+These checks establish **source-level data compatibility in both rollout
+orders** and local behavior with production website dependencies. They did
+not run the proposed bot on the organization's Heroku app or write to the
+organization's Firestore. Admins still need a managed-staging deployment to
+verify Heroku config and restarts, Slack scopes and membership, persistent
+notification permissions, scheduled jobs, and retained external commands.
+Website PR #19 remains stacked on #18; retarget it to `main` after #18 merges
+so its CI checks run on the intended merge result.
