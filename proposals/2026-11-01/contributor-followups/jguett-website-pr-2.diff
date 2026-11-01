@@ -473,6 +473,20 @@ index 0000000..f95e1e3
 +    throw new Error('sync disabled in mock mode')
 +  },
 +}
+diff --git a/next.config.ts b/next.config.ts
+index d2f04d8..6b6176b 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,5 +1,9 @@
+ import type { NextConfig } from 'next'
+ 
++if (process.env.NODE_ENV === 'production' && process.env.DATA_STORE === 'mock') {
++  throw new Error('DATA_STORE=mock is for development only')
++}
++
+ const nextConfig: NextConfig = {
+   images: {
+     remotePatterns: [
 diff --git a/package.json b/package.json
 index 258b5fb..7055c08 100644
 --- a/package.json
