@@ -1,0 +1,183 @@
+diff --git a/README.md b/README.md
+index df2461f..245045b 100644
+--- a/README.md
++++ b/README.md
+@@ -12,7 +12,7 @@ wifi info, the main topic for the event, and sponsors. At least, eventually.
+ Run `npm ci`, then `npm start` to edit the slide locally. Run `npm run build`
+ to produce the deployable static site in `dist/`; `npm run preview` serves that
+ build for local review. Bootstrap CSS is bundled locally. The event, speaker,
+-and sponsor fields are still placeholders for the planned generator feature.
++and sponsor fields are still placeholders for the planned event-feed feature.
+ 
+ ## Link to a specific slide
+ 
+@@ -29,6 +29,12 @@ as plain text and limited to 120 characters per heading. A bare group hash
+ This link format lets organizers prepare a slide while those integrations are
+ built.
+ 
++You can also add `sponsorImage` and `speakerImage` parameters with HTTPS
++image URLs. Those images appear when the link is opened again. To preview a
++picture from your computer without uploading it, open **Set slide images** on
++the slide and choose a file under 10 MB. Local file previews last only until
++you close or reload the page; they are not stored in the bookmarkable URL.
++
+ Run `npm test` for URL parsing checks, then `npm run build` and `npm run preview`
+ to inspect the built slide locally.
+ 
+diff --git a/index.html b/index.html
+index 3db83f4..dfe7716 100644
+--- a/index.html
++++ b/index.html
+@@ -57,6 +57,14 @@ <h2 id=topic>Topic</h2>
+         </div>
+       </div>
+     </div>
++    <details class="image-setup">
++      <summary>Set slide images</summary>
++      <label for="sponsor-upload">Sponsor image</label>
++      <input id="sponsor-upload" type="file" accept="image/*">
++      <label for="speaker-upload">Speaker image</label>
++      <input id="speaker-upload" type="file" accept="image/*">
++      <p id="image-setup-status" role="status">Choose an image to preview it on this device.</p>
++    </details>
+     
+     <script type="module" src="/main.js"></script>
+   </body>
+diff --git a/main.css b/main.css
+index 4102432..88176fb 100644
+--- a/main.css
++++ b/main.css
+@@ -33,3 +33,34 @@
+ #main-text h2 {
+     overflow-wrap: anywhere;
+ }
++.image-setup {
++    position: fixed;
++    right: 1rem;
++    bottom: 1rem;
++    z-index: 10;
++    max-width: min(20rem, calc(100vw - 2rem));
++    padding: 0.5rem 0.75rem;
++    border: 1px solid #adb5bd;
++    border-radius: 0.5rem;
++    background: #fff;
++    box-shadow: 0 0.25rem 1rem #0002;
++    font-size: 0.875rem;
++}
++.image-setup summary {
++    cursor: pointer;
++    font-weight: 600;
++}
++.image-setup label {
++    display: block;
++    margin-top: 0.5rem;
++}
++.image-setup input {
++    display: block;
++    max-width: 100%;
++}
++.image-setup p {
++    margin: 0.5rem 0 0;
++}
++@media print {
++    .image-setup { display: none; }
++}
+diff --git a/main.js b/main.js
+index 4f38855..dbff542 100644
+--- a/main.js
++++ b/main.js
+@@ -1,8 +1,37 @@
+ import 'bootstrap/dist/css/bootstrap.min.css';
+ import './main.css';
+-import { slideDetailsFromUrl } from './slide-content.mjs';
++import { slideDetailsFromUrl, slideImagesFromUrl } from './slide-content.mjs';
+ 
+ const details = slideDetailsFromUrl(window.location.href);
+ for (const [field, id] of Object.entries({ meeting: 'meetup', speaker: 'speaker', topic: 'topic' })) {
+   if (details[field]) document.getElementById(id).textContent = details[field];
+ }
++
++const images = slideImagesFromUrl(window.location.href);
++for (const [field, id] of Object.entries({ sponsorImage: 'sponsor-image', speakerImage: 'speaker-image' })) {
++  const url = images[field];
++  if (url) document.getElementById(id).src = url;
++}
++
++const previewUrls = new Map();
++for (const [inputId, imageId] of Object.entries({ 'sponsor-upload': 'sponsor-image', 'speaker-upload': 'speaker-image' })) {
++  document.getElementById(inputId).addEventListener('change', (event) => {
++    const file = event.target.files?.[0];
++    const status = document.getElementById('image-setup-status');
++    if (!file) return;
++    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
++      status.textContent = 'Choose an image file smaller than 10 MB.';
++      event.target.value = '';
++      return;
++    }
++    const previous = previewUrls.get(imageId);
++    if (previous) URL.revokeObjectURL(previous);
++    const preview = URL.createObjectURL(file);
++    previewUrls.set(imageId, preview);
++    document.getElementById(imageId).src = preview;
++    status.textContent = `${file.name} is shown on this slide. Local uploads are not saved in the URL.`;
++  });
++}
++window.addEventListener('pagehide', () => {
++  for (const preview of previewUrls.values()) URL.revokeObjectURL(preview);
++});
+diff --git a/slide-content.mjs b/slide-content.mjs
+index 4052e0a..7b68ee7 100644
+--- a/slide-content.mjs
++++ b/slide-content.mjs
+@@ -13,3 +13,20 @@ export function slideDetailsFromUrl(url) {
+     topic: get('topic')
+   };
+ }
++
++export function slideImagesFromUrl(url) {
++  const params = new URL(url).searchParams;
++  const image = (field) => {
++    const value = params.get(field);
++    if (!value || value.length > 2048) return undefined;
++    try {
++      const parsed = new URL(value);
++      return parsed.protocol === 'https:' && !parsed.username && !parsed.password
++        ? parsed.href
++        : undefined;
++    } catch {
++      return undefined;
++    }
++  };
++  return { sponsorImage: image('sponsorImage'), speakerImage: image('speakerImage') };
++}
+diff --git a/test/slide-content.test.mjs b/test/slide-content.test.mjs
+index 3cf6c0b..6cde9f1 100644
+--- a/test/slide-content.test.mjs
++++ b/test/slide-content.test.mjs
+@@ -1,6 +1,6 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { slideDetailsFromUrl } from '../slide-content.mjs';
++import { slideDetailsFromUrl, slideImagesFromUrl } from '../slide-content.mjs';
+ 
+ test('reads and normalizes meeting details from the URL', () => {
+   assert.deepEqual(
+@@ -22,3 +22,18 @@ test('keeps untrusted text as text and limits a long heading', () => {
+     { meeting: '<img src=x onerror=alert(1)>', speaker: undefined, topic: 'x'.repeat(120) }
+   );
+ });
++
++test('accepts only bounded HTTPS image URLs without credentials', () => {
++  const safe = new URL('https://slide.lansing.codes/');
++  safe.searchParams.set('sponsorImage', 'https://example.org/sponsor.png');
++  safe.searchParams.set('speakerImage', 'https://example.org/speaker.jpg');
++  assert.deepEqual(slideImagesFromUrl(safe.href), {
++    sponsorImage: 'https://example.org/sponsor.png',
++    speakerImage: 'https://example.org/speaker.jpg'
++  });
++  for (const value of ['http://example.org/a.png', 'javascript:alert(1)', 'data:image/png;base64,AAAA', 'https://user:pass@example.org/a.png', 'x'.repeat(2049)]) {
++    const unsafe = new URL(safe);
++    unsafe.searchParams.set('sponsorImage', value);
++    assert.equal(slideImagesFromUrl(unsafe.href).sponsorImage, undefined);
++  }
++});

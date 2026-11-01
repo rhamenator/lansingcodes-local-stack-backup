@@ -1,5 +1,5 @@
 {
-  "captured_at_utc": "2026-11-01T05:05:30.200891+00:00",
+  "captured_at_utc": "2026-11-01T05:53:41.702026+00:00",
   "scope": "Open rhamenator-authored Lansing Codes PRs in 11 active repositories; each patch is the GitHub PR diff at its recorded head",
   "pull_requests": [
     {
@@ -618,6 +618,21 @@
       "binary_placeholder": false
     },
     {
+      "repository": "slide",
+      "number": 26,
+      "title": "Preview sponsor and speaker images on welcome slide",
+      "url": "https://github.com/lansingcodes/slide/pull/26",
+      "author": "rhamenator",
+      "base_branch": "feat/slide-url-details",
+      "base_sha": "5e9742bd1207056be1c001e21c4edbb704af460c",
+      "head_branch": "feat/slide-image-preview",
+      "head_sha": "78f837ae48eb6371e6a23e811218f47786da52d3",
+      "patch": "proposals/2026-11-01/slide/pr-26.diff",
+      "patch_sha256": "027e29649aa00cb86d0748d2baa0b3c2b7a77dafeb98f155c38500a4962a6fcd",
+      "patch_bytes": 6913,
+      "binary_placeholder": false
+    },
+    {
       "repository": "webfont",
       "number": 19,
       "title": "Document webfont usage and add contributor issue templates",
@@ -875,16 +890,16 @@
     {
       "repository": "website",
       "number": 48,
-      "title": "Run website lint in GitHub Actions",
+      "title": "Run website lint and build in CI; gate production deploy on lint",
       "url": "https://github.com/lansingcodes/website/pull/48",
       "author": "rhamenator",
       "base_branch": "main",
       "base_sha": "38bacdda80ca4139352fc725b021ccf2bc221ee7",
       "head_branch": "ci/lint",
-      "head_sha": "34868752829916575ce3f1fff26b86d65e151dad",
+      "head_sha": "03bcc294129d3da778fa4152c13fd0753ddf9095",
       "patch": "proposals/2026-11-01/website/pr-48.diff",
-      "patch_sha256": "2b064e2719a9fce4f309ac1f860ff31de6b282c892c71de4e1c3c0ab2f19cc79",
-      "patch_bytes": 819,
+      "patch_sha256": "cf8274c2262723122881941055a9fe6b0fcc78fa4be54f6a84aa8b3178a140f0",
+      "patch_bytes": 1863,
       "binary_placeholder": false
     },
     {
