@@ -1,5 +1,5 @@
 {
-  "captured_at_utc": "2026-11-01T05:53:41.702026+00:00",
+  "captured_at_utc": "2026-11-01T06:18:56.332007+00:00",
   "scope": "Open rhamenator-authored Lansing Codes PRs in 11 active repositories; each patch is the GitHub PR diff at its recorded head",
   "pull_requests": [
     {
@@ -225,6 +225,21 @@
       "patch": "proposals/2026-11-01/sign-in-sheet/pr-18.diff",
       "patch_sha256": "82891a391286d1d0b4d49acdaab1080d7ad1055e68d4fe83c7134032a720eded",
       "patch_bytes": 12873,
+      "binary_placeholder": false
+    },
+    {
+      "repository": "sign-in-sheet",
+      "number": 19,
+      "title": "Add tested digital meetup sign-in prototype",
+      "url": "https://github.com/lansingcodes/sign-in-sheet/pull/19",
+      "author": "rhamenator",
+      "base_branch": "ci/static-checks",
+      "base_sha": "6cf20b09c3576f50da4915028dfee1a86dde6cbd",
+      "head_branch": "feat/digital-sign-in-netlify",
+      "head_sha": "767ff3837894c1911a07a53ff086905edd343728",
+      "patch": "proposals/2026-11-01/sign-in-sheet/pr-19.diff",
+      "patch_sha256": "c2c43cd6dc4dd35df936f8e03e7c8f35946d929a99f9de63a4e5f5d28ab50b16",
+      "patch_bytes": 7739,
       "binary_placeholder": false
     },
     {

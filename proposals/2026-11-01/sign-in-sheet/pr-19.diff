@@ -1,0 +1,153 @@
+diff --git a/.gitignore b/.gitignore
+index 12c2446..e8f58db 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -5,3 +5,5 @@ _site/
+ .DS_Store
+ node_modules/
+ 
++# Local Netlify folder
++.netlify
+diff --git a/README.md b/README.md
+index 89d5dec..4c6f74b 100644
+--- a/README.md
++++ b/README.md
+@@ -4,6 +4,26 @@ A sign-in sheet for Lansing tech events.
+ 
+ https://lansingcodes.github.io/sign-in-sheet/
+ 
++## Digital sign-in prototype
++
++`digital/` is a separate Netlify Forms prototype for issue #14. The existing
++printable sheet remains at the site root. Deploy the repository's files to a
++Netlify site with Forms enabled, then open `/digital/`. The optional `event`
++query parameter pre-fills the event field, for example
++`/digital/?event=Lansing%20Codes%20Meetup`; use that URL to make a QR code for
++the welcome slide. Attendees can edit the event name, so organizers should
++review it before using submissions as an attendance record.
++
++The form collects a name, optional email, and an unchecked newsletter-interest
++flag. It does **not** subscribe anyone automatically. A checked interest flag
++requires an email in the browser. Netlify stores submissions in the site's
++private Forms dashboard, accessible to its team members. The honeypot reduces
++basic automated submissions. This is a demonstration: use fictional data on a
++personal test site. Before using it with attendees, deploy it under a Lansing
++Codes-owned account and settle consent wording, access, retention, deletion,
++spam controls, and the newsletter handoff. The site owner's Netlify plan and
++form limits should be checked before an event.
++
+ ## Code of Conduct
+ 
+ All participants are expected to treat others with respect and follow our [Code of Conduct](https://www.lansing.codes/code-of-conduct/).
+diff --git a/digital/index.html b/digital/index.html
+new file mode 100644
+index 0000000..0ceb22b
+--- /dev/null
++++ b/digital/index.html
+@@ -0,0 +1,33 @@
++<!DOCTYPE html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Meetup sign-in prototype · Lansing Codes</title>
++    <link rel="stylesheet" href="style.css">
++    <script defer src="script.js"></script>
++  </head>
++  <body>
++    <main>
++      <div class="brand">Lansing <strong>Codes</strong></div>
++      <p class="eyebrow">Digital sign-in prototype</p>
++      <h1>Welcome to the meetup.</h1>
++      <p class="intro">Sign in for today’s event. This prototype uses a private Netlify Forms inbox; organizers would need to deploy it under a Lansing Codes account before accepting real attendee details.</p>
++      <p class="demo">For testing, enter fictional details only.</p>
++      <form name="meetup-sign-in" method="POST" action="/digital/thanks.html" data-netlify="true" netlify-honeypot="bot-field">
++        <input type="hidden" name="form-name" value="meetup-sign-in">
++        <p class="honeypot"><label>Leave this field empty <input type="text" name="bot-field" autocomplete="off"></label></p>
++        <label for="event">Event</label>
++        <input id="event" name="event" type="text" maxlength="100" required value="Lansing Codes meetup">
++        <label for="attendee-name">Your name</label>
++        <input id="attendee-name" name="attendee-name" type="text" autocomplete="name" maxlength="100" required>
++        <label for="email">Email <span>(optional)</span></label>
++        <input id="email" name="email" type="email" autocomplete="email" maxlength="254">
++        <label class="choice"><input id="newsletter" name="newsletter" type="checkbox" value="yes"> I’d like to receive the Lansing Codes monthly newsletter.</label>
++        <p class="privacy">Your name and any email you provide are used to record attendance for this event. Newsletter interest is separate and unchecked by default. A real deployment needs an organizer-approved privacy and retention policy.</p>
++        <button type="submit">Sign in</button>
++      </form>
++      <p class="paper">Prefer paper? Ask an organizer for the printed sign-in sheet.</p>
++    </main>
++  </body>
++</html>
+diff --git a/digital/script.js b/digital/script.js
+new file mode 100644
+index 0000000..a4bb581
+--- /dev/null
++++ b/digital/script.js
+@@ -0,0 +1,9 @@
++const eventName = new URLSearchParams(window.location.search).get('event');
++if (eventName && eventName.trim().length <= 100) {
++  document.querySelector('#event').value = eventName.trim();
++}
++
++document.querySelector('#newsletter').addEventListener('change', (event) => {
++  const email = document.querySelector('#email');
++  email.required = event.target.checked;
++});
+diff --git a/digital/style.css b/digital/style.css
+new file mode 100644
+index 0000000..f3d9bd0
+--- /dev/null
++++ b/digital/style.css
+@@ -0,0 +1,23 @@
++:root { color-scheme: light; font-family: system-ui, sans-serif; color: #17243d; background: #f4f7fa; }
++* { box-sizing: border-box; }
++body { margin: 0; padding: 2rem 1rem; }
++main { max-width: 36rem; margin: 0 auto; padding: clamp(1.5rem, 5vw, 3rem); background: white; border-radius: 1.25rem; box-shadow: 0 10px 35px #17243d16; }
++.brand { font-size: 1.25rem; letter-spacing: -.04em; }
++.brand strong { color: #cc3b32; }
++.eyebrow { margin-top: 2.5rem; color: #b42b22; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; }
++h1 { margin: .4rem 0 1rem; font-size: clamp(2rem, 8vw, 3rem); line-height: 1.1; text-wrap: balance; }
++.intro, .privacy, .paper { line-height: 1.5; color: #4b586d; }
++.demo { padding: .75rem 1rem; border-radius: .5rem; background: #fff5dd; color: #704d00; font-weight: 650; }
++form { display: grid; gap: .55rem; margin-top: 1.75rem; }
++label { font-weight: 650; }
++label span { font-weight: 400; color: #536177; }
++input[type=text], input[type=email] { width: 100%; min-height: 3rem; padding: .65rem .85rem; border: 1px solid #a8b3c4; border-radius: .5rem; font: inherit; margin-bottom: .7rem; }
++input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #3176d3; outline-offset: 2px; }
++.choice { display: flex; gap: .7rem; align-items: start; line-height: 1.4; font-weight: 500; }
++.choice input { width: 1.2rem; height: 1.2rem; flex: none; margin-top: .15rem; }
++.privacy { font-size: .85rem; margin: .7rem 0; }
++button { min-height: 3rem; border: 0; border-radius: .5rem; background: #b42b22; color: white; font: inherit; font-weight: 700; cursor: pointer; }
++button:hover { background: #8d211a; }
++.paper { font-size: .9rem; margin-top: 1.5rem; }
++.honeypot { display: none; }
++@media (max-width: 420px) { body { padding: 0; } main { min-height: 100vh; border-radius: 0; box-shadow: none; } }
+diff --git a/digital/thanks.html b/digital/thanks.html
+new file mode 100644
+index 0000000..22106b2
+--- /dev/null
++++ b/digital/thanks.html
+@@ -0,0 +1,10 @@
++<!DOCTYPE html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Signed in · Lansing Codes prototype</title>
++    <link rel="stylesheet" href="style.css">
++  </head>
++  <body><main><div class="brand">Lansing <strong>Codes</strong></div><h1>You’re signed in.</h1><p>Thanks for joining us today.</p><p><a href="/digital/">Back to sign-in</a></p></main></body>
++</html>
+diff --git a/package.json b/package.json
+index cd6d96e..8524be9 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "private": true,
+   "scripts": {
+-    "check": "node --check script.js && html-validate index.html && node --test"
++    "check": "node --check script.js && node --check digital/script.js && html-validate index.html digital/index.html digital/thanks.html && node --test"
+   },
+   "devDependencies": {
+     "html-validate": "10.8.0"
