@@ -1,0 +1,12 @@
+diff --git a/README.md b/README.md
+index 9585c13..3651f4c 100644
+--- a/README.md
++++ b/README.md
+@@ -3,7 +3,6 @@ This repo is meant to be a collection of tools to aid event organizers with faci
+ 
+ ## Technology
+ - [Zoom](https://zoom.us/) - breakout rooms & polls
+-- [Wonder](https://www.wonder.me/) - formerly Yotribe, virtual gathering space
+ - [QiqoChat](https://qiqochat.com/) - virtual gathering platform
+ - [Miro](https://miro.com) - digital whiteboard
+ - [Random Picker](https://www.randompicker.com/) - for raffles/giveaways

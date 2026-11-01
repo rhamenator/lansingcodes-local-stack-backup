@@ -1,0 +1,77 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..c1c30ec
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,25 @@
++name: CI
++
++on:
++  push:
++  pull_request:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  package-check:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    steps:
++      - name: Check out source
++        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
++        with:
++          persist-credentials: false
++      - name: Set up Node.js
++        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
++        with:
++          node-version: '22'
++      - name: Check packaged font assets
++        run: npm test
+diff --git a/package.json b/package.json
+index 777285a..63bb7b4 100644
+--- a/package.json
++++ b/package.json
+@@ -4,6 +4,9 @@
+   "author": "Humanity Codes, LLC",
+   "license": "Hippocratic-2.1",
+   "description": "Custom web font icons for Lansing Codes tech groups",
++  "scripts": {
++    "test": "node --test"
++  },
+   "contributors": [
+     "Erik Gillespie <erik.gillespie@gmail.com>"
+   ],
+diff --git a/test/package.test.mjs b/test/package.test.mjs
+new file mode 100644
+index 0000000..b36e506
+--- /dev/null
++++ b/test/package.test.mjs
+@@ -0,0 +1,26 @@
++import assert from 'node:assert/strict'
++import { execFileSync } from 'node:child_process'
++import { existsSync, readFileSync } from 'node:fs'
++import { fileURLToPath } from 'node:url'
++import test from 'node:test'
++
++const rootUrl = new URL('../', import.meta.url)
++
++test('published package includes every font file referenced by CSS', () => {
++  const css = readFileSync(new URL('font-lansing-codes.css', rootUrl), 'utf8')
++  const references = [...css.matchAll(/url\("\.\/([^"?#]+)(?:[?#][^"]*)?"\)/g)]
++    .map((match) => match[1])
++  assert.ok(references.length > 0, 'font CSS must reference local assets')
++
++  const packageJson = execFileSync('npm', ['pack', '--dry-run', '--json'], {
++    cwd: fileURLToPath(rootUrl),
++    encoding: 'utf8'
++  })
++  const packageFiles = new Set(JSON.parse(packageJson)[0].files.map((file) => file.path))
++
++  for (const path of references) {
++    assert.ok(existsSync(new URL(path, rootUrl)), `${path} must exist`)
++    assert.ok(packageFiles.has(path), `${path} must be included in the npm package`)
++  }
++  assert.ok(packageFiles.has('font-lansing-codes.css'))
++})

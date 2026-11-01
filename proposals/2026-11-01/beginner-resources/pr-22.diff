@@ -1,0 +1,115 @@
+diff --git a/.github/CONTRIBUTING.md b/.github/CONTRIBUTING.md
+new file mode 100644
+index 0000000..d4d060d
+--- /dev/null
++++ b/.github/CONTRIBUTING.md
+@@ -0,0 +1,96 @@
++# Lansing Codes Beginner Resources Contributing Guide
++
++Thanks for helping people find a good starting point for learning to code.
++Please read the [Lansing Codes Code of Conduct](https://www.lansing.codes/code-of-conduct/)
++before joining a discussion or submitting a change.
++
++## Contents
++
++- [Code of Conduct](#code-of-conduct)
++- [Issue Reporting Guidelines](#issue-reporting-guidelines)
++- [Pull Request Guidelines](#pull-request-guidelines)
++- [Development Setup](#development-setup)
++- [Testing Locally](#testing-locally)
++- [Deployments](#deployments)
++
++## Code of Conduct
++
++The [Code of Conduct](https://www.lansing.codes/code-of-conduct/) applies to
++issues, pull requests, and community conversations.
++
++## Issue Reporting Guidelines
++
++Search [existing issues](https://github.com/lansingcodes/beginner-resources/issues)
++before filing a new one. Use the [bug report
++template](https://github.com/lansingcodes/beginner-resources/issues/new?template=bug_report.md)
++for a broken link or incorrect description. Include the affected README
++section, the URL, what you observed, and what you expected. Use the [feature
++request template](https://github.com/lansingcodes/beginner-resources/issues/new?template=feature_request.md)
++to propose a new category or other larger change.
++
++For a new learning resource, explain who it helps, what it teaches, whether it
++is free or paid, and why it belongs in the proposed category. Link directly to
++the resource. Avoid referral links and unverified claims about price or access.
++
++## Pull Request Guidelines
++
++1. Work in a branch on your fork and send a pull request to `main`.
++2. Keep unrelated resource additions and fixes in separate pull requests.
++3. Link the relevant issue and explain the value of each new resource or the
++   reason for removing or changing an existing one.
++4. Check spelling, Markdown formatting, and links before submitting. Include
++   the checks you ran and their results in the pull request.
++5. Request a maintainer review. A maintainer decides when the change is ready
++   to merge.
++
++If a resource requires an account, payment, or a particular device, say so in
++its description. Do not add personal referral codes, credentials, or tracking
++links. Follow the tone and category structure already used in the README.
++
++## Development Setup
++
++You need [Git](https://git-scm.com/downloads), a text editor with Markdown
++preview (such as [VS Code](https://code.visualstudio.com/)), and a browser.
++[Node.js and npm](https://nodejs.org/) are optional for the `live-server`
++preview below. There is no application build or dependency install in this
++repository; its published content is the README on GitHub.
++
++Fork [beginner-resources](https://github.com/lansingcodes/beginner-resources),
++then clone your fork and create a branch:
++
++```sh
++git clone https://github.com/YOUR-USERNAME/beginner-resources.git
++cd beginner-resources
++git switch -c docs/describe-your-change
++```
++
++Edit `README.md` and, if needed, supporting files in `.github/`. Keep the
++original source URL visible in the Markdown so others can verify it.
++
++## Testing Locally
++
++Use your editor's Markdown preview to check that headings, lists, and links
++render correctly. To serve the public README locally, run this from the
++repository root:
++
++```sh
++npx --yes live-server --no-browser --port=8080
++```
++
++Open `http://127.0.0.1:8080/README.md` to confirm the file is served, then
++open each changed external link in a browser. `live-server` serves the Markdown
++source, not GitHub's rendered README, and does not serve files under `.github/`.
++Preview those files in your editor and check the rendered Markdown in the pull
++request's GitHub preview. Stop the server with Ctrl+C.
++
++No automated test suite is configured for this documentation repository. For
++link fixes, record the destination and the observed response or page in the
++pull request. If a site blocks automated requests, describe a browser check
++instead of claiming a link test passed.
++
++## Deployments
++
++There is no separate website deployment for this repository. After a pull
++request is reviewed and merged into `main`, GitHub displays the updated README
++on the repository's front page. Contributors should use pull requests rather
++than pushing directly to `main`; verify the final rendered page after merge.
+diff --git a/README.md b/README.md
+index 4e9e917..0d30521 100644
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,8 @@
+ 
+ Beginner-resources is a repository designed to help beginners get started in the exciting world of development. You will find here helpful tools and resources to get you started on your journey to becoming the best developer you can be. Whether it's for front-end, back-end, mobile development, or anything in between, this collection of resources will help.
+ 
++Want to suggest a resource or fix a link? Read the [Contributing Guide](.github/CONTRIBUTING.md).
++
+ ### Web Development Basics:
+ - [The Odin Project](https://www.theodinproject.com/) - The Odin Project is a full-stack curriculum designed to take one from a beginner to professional developer. It's completely free, and serves as a great roadmap to follow during your journey. The Odin Project's curriculum and website are open source, allowing anyone to gain experience by contributing to their GitHub repositories.
+ 

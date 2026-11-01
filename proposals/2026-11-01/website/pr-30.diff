@@ -1,0 +1,47 @@
+diff --git a/lib/utils/cleanEventDescription.ts b/lib/utils/cleanEventDescription.ts
+index 9305260..ea93ce1 100644
+--- a/lib/utils/cleanEventDescription.ts
++++ b/lib/utils/cleanEventDescription.ts
+@@ -6,8 +6,9 @@ export function cleanEventDescription(description: string): string {
+     /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2580-\u27BF]|\uD83E[\uDD10-\uDDFF])/g,
+     '',
+   )
+-  // Remove all text after the last '.'
+-  result = result.replace(/\.(?=[^.]*$)(.*)/g, '')
++  // Drop an incomplete trailing sentence without treating Node.js or 2.0 as a sentence break.
++  const lastSentenceEnd = [...result.matchAll(/\.(?=\s|$)/g)].at(-1)
++  if (lastSentenceEnd) result = result.slice(0, lastSentenceEnd.index)
+   // Remove --- and all subsequent text
+   result = result.replace(/(---)(.*)/g, '')
+   result = result.trim()
+diff --git a/test/cleanEventDescription.test.mjs b/test/cleanEventDescription.test.mjs
+new file mode 100644
+index 0000000..876d6b1
+--- /dev/null
++++ b/test/cleanEventDescription.test.mjs
+@@ -0,0 +1,25 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { cleanEventDescription } from '../lib/utils/cleanEventDescription.ts'
++
++test('keeps internal periods in technology names and version numbers', () => {
++  assert.equal(
++    cleanEventDescription('Learn Node.js and build web apps'),
++    'Learn Node.js and build web apps...',
++  )
++  assert.equal(
++    cleanEventDescription('Discuss version 2.0 migration'),
++    'Discuss version 2.0 migration...',
++  )
++})
++
++test('still removes an incomplete trailing sentence', () => {
++  assert.equal(
++    cleanEventDescription('Bring a laptop. Ask questions about Node.js'),
++    'Bring a laptop...',
++  )
++  assert.equal(
++    cleanEventDescription('Learn Node.js. Build an app.'),
++    'Learn Node.js. Build an app...',
++  )
++})

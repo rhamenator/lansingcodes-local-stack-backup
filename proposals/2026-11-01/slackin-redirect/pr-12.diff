@@ -1,0 +1,49 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..6582234
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,2 @@
++# Local Netlify folder
++.netlify
+diff --git a/README.md b/README.md
+index 6e90662..7cd4900 100644
+--- a/README.md
++++ b/README.md
+@@ -2,11 +2,10 @@
+ 
+ [![Netlify Status](https://api.netlify.com/api/v1/badges/29f7a1d9-c50f-42c7-a944-9524934bcd87/deploy-status)](https://app.netlify.com/sites/lansingcodes-slackin-redirect/deploys)
+ 
+-Redirects traffic from slack.lansing.codes to our "shared invites" link. The link can be accessed by a Slack administrator at [https://lansingcodes.slack.com/admin/shared_invites](https://lansingcodes.slack.com/admin/shared_invites). ~~Note that these links expire after 9 months, so a reminder should be added to the leadership Slack channel to ensure the URL is updated through a PR to this repo, replacing all references to <https://join.slack.com/t/lansingcodes/shared_invite> in index.html to reference the invite token.~~ The link should no longer expire.
++Redirects traffic from slack.lansing.codes to our shared invite link. An admin can manage that link at [Slack shared invites](https://lansingcodes.slack.com/admin/shared_invites). If the invite changes, update both `_redirects` and the fallback link in `index.html`.
+ 
+-This project is hosted online using Netlify. A DNS CNAME record points
+-`slack[.lansing.codes]` at the website, which then directs traffic to the
+-[Slack inviter](https://github.com/rauchg/slackin) running on Heroku.
++This project is hosted on Netlify. The `_redirects` rule sends an HTTP 302 to
++Slack; `index.html` retains a clickable fallback for static preview.
+ 
+ ## License
+ 
+diff --git a/_redirects b/_redirects
+new file mode 100644
+index 0000000..3ca143a
+--- /dev/null
++++ b/_redirects
+@@ -0,0 +1 @@
++/ https://join.slack.com/t/lansingcodes/shared_invite/zt-2132rnwxg-zAlGWHDmsRWtk1Q~QG1vjA/ 302!
+diff --git a/index.html b/index.html
+index d87831f..c75acf6 100644
+--- a/index.html
++++ b/index.html
+@@ -11,8 +11,8 @@
+     <p>
+       If you are not automatically redirected, please go to
+       <a
+-        href="https://join.slack.com/t/lansingcodes/shared_invite/zt-2132rnwxg-zAlGWHDmsRWtk1Q~QG1vjA"
+-      >https://join.slack.com/t/lansingcodes/shared_invite/zt-2132rnwxg-zAlGWHDmsRWtk1Q~QG1vjA</a>.
++        href="https://join.slack.com/t/lansingcodes/shared_invite/zt-2132rnwxg-zAlGWHDmsRWtk1Q~QG1vjA/"
++      >https://join.slack.com/t/lansingcodes/shared_invite/zt-2132rnwxg-zAlGWHDmsRWtk1Q~QG1vjA/</a>.
+     </p>
+   </body>
+ </html>

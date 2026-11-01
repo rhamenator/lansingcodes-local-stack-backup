@@ -1,0 +1,87 @@
+diff --git a/lib/helpers/format-time.js b/lib/helpers/format-time.js
+index 8f0d55e..0fd394f 100644
+--- a/lib/helpers/format-time.js
++++ b/lib/helpers/format-time.js
+@@ -1,3 +1,21 @@
+-const moment = require('moment')
++const formatter = new Intl.DateTimeFormat('en-US', {
++  timeZone: 'America/Detroit',
++  weekday: 'long',
++  month: 'long',
++  day: 'numeric',
++  hour: 'numeric',
++  minute: '2-digit',
++  hour12: true
++})
+ 
+-module.exports = time => moment(time).format('dddd, MMMM Do [at] h:mma')
++const ordinal = day => {
++  if (day % 100 >= 11 && day % 100 <= 13) return `${day}th`
++  return `${day}${{ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th'}`
++}
++
++module.exports = time => {
++  const date = new Date(time)
++  if (Number.isNaN(date.valueOf())) return 'Invalid date'
++  const parts = Object.fromEntries(formatter.formatToParts(date).map(part => [part.type, part.value]))
++  return `${parts.weekday}, ${parts.month} ${ordinal(Number(parts.day))} at ${parts.hour}:${parts.minute}${parts.dayPeriod.toLowerCase()}`
++}
+diff --git a/spec/lib/helpers/format-event-response-spec.js b/spec/lib/helpers/format-event-response-spec.js
+index d22c43d..15b6338 100644
+--- a/spec/lib/helpers/format-event-response-spec.js
++++ b/spec/lib/helpers/format-event-response-spec.js
+@@ -17,4 +17,14 @@ describe('format-event-response', () => {
+     expect(text).toContain('&lt;@U123&gt; &amp; friends')
+     expect(text).not.toContain('<javascript:')
+   })
++
++  it('shows Lansing time in the next-event reply when the host uses UTC', () => {
++    const text = nextEvent({
++      group: 'ai',
++      name: 'Evening meetup',
++      url: 'https://example.test/event',
++      startTime: Date.parse('2026-11-18T01:00:00Z')
++    })
++    expect(text).toContain(':clock3: Tuesday, November 17th at 8:00pm')
++  })
+ })
+diff --git a/spec/lib/helpers/format-time-spec.js b/spec/lib/helpers/format-time-spec.js
+index 242c51b..69f8ceb 100644
+--- a/spec/lib/helpers/format-time-spec.js
++++ b/spec/lib/helpers/format-time-spec.js
+@@ -1,11 +1,28 @@
+ const formatTime = require('../../../lib/helpers/format-time')
+ 
+ describe('format-time', () => {
+-  it(
+-    'should properly format 1439436340000 to "Wednesday, July 12th at 11:25pm"',
+-    () => {
+-      expect(formatTime(1439436340000))
+-        .toEqual('Wednesday, August 12th at 11:25pm')
+-    }
+-  )
++  it('formats the existing August fixture in Lansing time', () => {
++    expect(formatTime(1439436340000))
++      .toEqual('Wednesday, August 12th at 11:25pm')
++  })
++
++  it('keeps a late evening event on its Lansing calendar date', () => {
++    expect(formatTime(Date.parse('2026-11-18T01:00:00Z')))
++      .toEqual('Tuesday, November 17th at 8:00pm')
++  })
++
++  it('formats daylight-saving event time in Lansing', () => {
++    expect(formatTime(Date.parse('2027-07-20T00:00:00Z')))
++      .toEqual('Monday, July 19th at 8:00pm')
++  })
++
++  it('formats ordinal day endings and invalid dates', () => {
++    expect(formatTime(Date.parse('2027-08-21T16:00:00Z')))
++      .toEqual('Saturday, August 21st at 12:00pm')
++    expect(formatTime(Date.parse('2027-08-22T16:00:00Z')))
++      .toEqual('Sunday, August 22nd at 12:00pm')
++    expect(formatTime(Date.parse('2027-08-23T16:00:00Z')))
++      .toEqual('Monday, August 23rd at 12:00pm')
++    expect(formatTime(NaN)).toEqual('Invalid date')
++  })
+ })

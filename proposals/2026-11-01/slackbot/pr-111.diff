@@ -1,0 +1,149 @@
+diff --git a/.env.example b/.env.example
+index 5db49bc..bdc2b7b 100644
+--- a/.env.example
++++ b/.env.example
+@@ -10,6 +10,9 @@ ORGANIZER_FIRST_NAME_BY_GROUP='{"catech":"Alex"}'
+ WELCOMER_BY_CHANNEL='{"C0123456789":"U0123456789"}'
+ EVENT_ANNOUNCEMENT_CHANNEL_ID=C0123456789
+ EVENT_GROUP_CHANNEL_IDS='{"catech":"C0123456789"}'
++# Optional policy link and contacts for `slackbot code of conduct`.
++# SLACKBOT_CODE_OF_CONDUCT_URL=https://www.lansing.codes/code-of-conduct/
++# SLACKBOT_MODERATORS=U0123456789,U9876543210
+ # APPROVED_TWEETER_IDS=U0123456789,U9876543210
+ # FIRESTORE_EMULATOR_HOST=127.0.0.1:8085
+ # X developer app and user write credentials for optional real posting:
+diff --git a/README.md b/README.md
+index 1c368b9..3161a06 100644
+--- a/README.md
++++ b/README.md
+@@ -41,6 +41,13 @@ Before deploying, run `npm run preflight -- --expect-project YOUR_FIREBASE_PROJE
+ 
+ Set `ORGANIZER_BY_GROUP`, `ORGANIZER_FIRST_NAME_BY_GROUP`, `WELCOMER_BY_CHANNEL`, `EVENT_ANNOUNCEMENT_CHANNEL_ID`, and `EVENT_GROUP_CHANNEL_IDS` for the deployed workspace. The old username and channel-name mappings remain as fallbacks. `APPROVED_TWEETER_IDS` restricts the optional X posting command to Slack user IDs; the four `TWITTER_*` variables supply the X app and user credentials. Keep all tokens outside the repository.
+ 
++The bot shares the [Code of Conduct](https://www.lansing.codes/code-of-conduct/)
++for `slackbot code of conduct` or a plain `code of conduct` question. Set
++`SLACKBOT_CODE_OF_CONDUCT_URL` to an HTTPS policy URL if it moves. Optionally
++set `SLACKBOT_MODERATORS` to comma-separated Slack user IDs or usernames to
++include contacts in the reply. Without that setting, the reply points to the
++policy page, which has the current reporting contact.
++
+ To move scheduled event announcements out of `#general` (issue #63), create or choose a dedicated `#events` channel, invite the bot, and set `EVENT_ANNOUNCEMENT_CHANNEL_ID` to that channel's Slack ID in the bot's Heroku config. This also moves the scheduler's morning and no-new-events messages. Set `EVENT_GROUP_CHANNEL_IDS` to a JSON object such as `{"devops":"C0123456789"}` for optional group reminders; each target channel must also contain the bot. Use channel IDs from the deployed workspace, not IDs from a test workspace. Test the routing there before enabling the production schedule.
+ 
+ Run `npm test`, `npm run lint`, `npm run test:legacy`, and `npm audit --audit-level=low` before a PR. The unit and legacy smoke suites need no Slack or X credentials. The unit suite includes a full Hubot configuration check.
+diff --git a/lib/initializers/code-of-conduct.js b/lib/initializers/code-of-conduct.js
+new file mode 100644
+index 0000000..73d03f3
+--- /dev/null
++++ b/lib/initializers/code-of-conduct.js
+@@ -0,0 +1,48 @@
++// Description:
++//   Share the community Code of Conduct when someone asks for it.
++// Configuration:
++//   SLACKBOT_CODE_OF_CONDUCT_URL - HTTPS link to the current policy.
++//   SLACKBOT_MODERATORS - Optional comma-separated Slack user IDs or usernames.
++// Commands:
++//   slackbot code of conduct - Share the policy link.
++//   code of conduct - Share the policy link in a channel.
++
++const defaultUrl = 'https://www.lansing.codes/code-of-conduct/'
++
++function policyUrl () {
++  const raw = process.env.SLACKBOT_CODE_OF_CONDUCT_URL || defaultUrl
++  if (/[<>|\s]/.test(raw)) throw new Error('SLACKBOT_CODE_OF_CONDUCT_URL must be one HTTPS URL')
++  const url = new URL(raw)
++  if (url.protocol !== 'https:' || url.username || url.password) {
++    throw new Error('SLACKBOT_CODE_OF_CONDUCT_URL must be one HTTPS URL')
++  }
++  return url.href
++}
++
++function moderators () {
++  const values = (process.env.SLACKBOT_MODERATORS || '')
++    .split(',')
++    .map(value => value.trim())
++    .filter(Boolean)
++
++  return values.map(value => {
++    if (/^U[A-Z0-9]+$/.test(value)) return `<@${value}>`
++    const name = value.replace(/^@/, '')
++    if (/^(?:here|channel|everyone)$/i.test(name)) {
++      throw new Error('SLACKBOT_MODERATORS cannot include broadcast mentions')
++    }
++    if (/^@?[a-z0-9._-]+$/i.test(value)) return `@${name}`
++    throw new Error('SLACKBOT_MODERATORS must contain Slack IDs or usernames')
++  })
++}
++
++module.exports = robot => {
++  const url = policyUrl()
++  const contacts = moderators()
++  const lines = [`Our community guidelines: <${url}|Read the policy>.`]
++  if (contacts.length) lines.push(`Questions or concerns? Contact ${contacts.join(', ')}.`)
++  const reply = message => message.send(lines.join('\n'))
++
++  robot.respond(/(?:code of conduct|community guidelines)\??$/i, reply)
++  robot.hear(/^(?:is there (?:a |an )?|where (?:is|can i find) (?:the |our )?|please (?:share|show) (?:the |our )?)?code of conduct\??$/i, reply)
++}
+diff --git a/spec/lib/initializers/code-of-conduct-spec.js b/spec/lib/initializers/code-of-conduct-spec.js
+new file mode 100644
+index 0000000..acdb876
+--- /dev/null
++++ b/spec/lib/initializers/code-of-conduct-spec.js
+@@ -0,0 +1,57 @@
++const includeHubot = require('../../helpers/include-hubot')
++
++describe('code-of-conduct', () => {
++  includeHubot()
++
++  afterEach(() => {
++    delete process.env.SLACKBOT_CODE_OF_CONDUCT_URL
++    delete process.env.SLACKBOT_MODERATORS
++  })
++
++  it('replies to a direct command with the current policy link', async () => {
++    require('../../../lib/initializers/code-of-conduct')(robot)
++    const sent = jasmine.createSpy('sent')
++    robot.adapter.on('send', sent)
++
++    await hubotHelpers.receiveMessage('slackbot code of conduct')
++
++    expect(sent).toHaveBeenCalledTimes(1)
++    expect(sent.calls.mostRecent().args[1][0]).toContain('https://www.lansing.codes/code-of-conduct/')
++  })
++
++  it('replies to a plain question without posting twice', async () => {
++    require('../../../lib/initializers/code-of-conduct')(robot)
++    const sent = jasmine.createSpy('sent')
++    robot.adapter.on('send', sent)
++
++    await hubotHelpers.receiveMessage('Is there a code of conduct?')
++
++    expect(sent).toHaveBeenCalledTimes(1)
++  })
++
++  it('uses a configured policy and moderator IDs', async () => {
++    process.env.SLACKBOT_CODE_OF_CONDUCT_URL = 'https://example.org/policy'
++    process.env.SLACKBOT_MODERATORS = 'U0123456789, @organizer'
++    require('../../../lib/initializers/code-of-conduct')(robot)
++    const sent = jasmine.createSpy('sent')
++    robot.adapter.on('send', sent)
++
++    await hubotHelpers.receiveMessage('code of conduct')
++
++    expect(sent).toHaveBeenCalledTimes(1)
++    expect(sent.calls.mostRecent().args[1][0]).toContain('https://example.org/policy')
++    expect(sent.calls.mostRecent().args[1][0]).toContain('<@U0123456789>, @organizer')
++  })
++
++  it('rejects unsafe policy links and moderator names at startup', () => {
++    process.env.SLACKBOT_CODE_OF_CONDUCT_URL = 'http://example.org/policy'
++    expect(() => require('../../../lib/initializers/code-of-conduct')(robot)).toThrowError(/HTTPS URL/)
++
++    process.env.SLACKBOT_CODE_OF_CONDUCT_URL = 'https://example.org/policy'
++    process.env.SLACKBOT_MODERATORS = 'person\n@here'
++    expect(() => require('../../../lib/initializers/code-of-conduct')(robot)).toThrowError(/Slack IDs or usernames/)
++
++    process.env.SLACKBOT_MODERATORS = '@here'
++    expect(() => require('../../../lib/initializers/code-of-conduct')(robot)).toThrowError(/broadcast mentions/)
++  })
++})

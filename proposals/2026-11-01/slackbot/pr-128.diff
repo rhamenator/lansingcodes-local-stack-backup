@@ -1,0 +1,36 @@
+diff --git a/lib/fetchers/events-fetcher.js b/lib/fetchers/events-fetcher.js
+index 479904d..8f1fc88 100644
+--- a/lib/fetchers/events-fetcher.js
++++ b/lib/fetchers/events-fetcher.js
+@@ -7,7 +7,7 @@ const weeksAvailable = 6
+ module.exports = (robot) =>
+   initFirestore().then(db => ({
+     upcoming: () => {
+-      const startDate = moment().tz('America/Detroit').startOf('day')
++      const startDate = moment().tz('America/Detroit')
+       const endDate = moment(startDate)
+         .add(weeksAvailable - 1, 'weeks')
+         .endOf('week')
+diff --git a/spec/lib/fetchers/events-fetcher-spec.js b/spec/lib/fetchers/events-fetcher-spec.js
+index 5b6525e..b4f179c 100644
+--- a/spec/lib/fetchers/events-fetcher-spec.js
++++ b/spec/lib/fetchers/events-fetcher-spec.js
+@@ -2,7 +2,7 @@ const moment = require('moment-timezone')
+ const proxyquire = require('proxyquire').noCallThru()
+ 
+ describe('events-fetcher', () => {
+-  it('queries through the end of Saturday in Lansing across a DST change', async () => {
++  it('excludes past starts and queries through the end of Saturday in Lansing across a DST change', async () => {
+     const originalNow = moment.now
+     moment.now = () => Date.parse('2026-10-31T22:00:00Z')
+     let clauses
+@@ -24,7 +24,8 @@ describe('events-fetcher', () => {
+       await (await getEventsFetcher({})).upcoming()
+       const lower = clauses.find(clause => clause.field === 'startTime' && clause.operator === '>=')
+       const upper = clauses.find(clause => clause.field === 'startTime' && clause.operator === '<=')
+-      expect(lower.value).toEqual(Date.parse('2026-10-31T04:00:00Z'))
++      expect(lower.value).toEqual(Date.parse('2026-10-31T22:00:00Z'))
++      expect(Date.parse('2026-10-31T21:00:00Z')).toBeLessThan(lower.value)
+       expect(upper.value).toEqual(Date.parse('2026-12-06T04:59:59.999Z'))
+       expect(Date.parse('2026-12-06T02:00:00Z')).toBeLessThanOrEqual(upper.value)
+     } finally {

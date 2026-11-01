@@ -1,0 +1,53 @@
+diff --git a/.circleci/config.yml b/.circleci/config.yml
+index 7f92592..8b33578 100644
+--- a/.circleci/config.yml
++++ b/.circleci/config.yml
+@@ -18,7 +18,12 @@ jobs:
+           command: |
+             npm install
+             npm rebuild
+-            npm test
++            if npm test > /tmp/slackbot-jasmine.log 2>&1; then
++              cat /tmp/slackbot-jasmine.log
++            else
++              cat /tmp/slackbot-jasmine.log
++              exit 1
++            fi
+       - save_cache:
+           key: v1-dep-{{ .Branch }}-{{ checksum "package-lock.json" }}
+           paths:
+diff --git a/.github/CONTRIBUTING.md b/.github/CONTRIBUTING.md
+index 51a88d4..1958aac 100644
+--- a/.github/CONTRIBUTING.md
++++ b/.github/CONTRIBUTING.md
+@@ -390,5 +390,5 @@ After a pull request is reviewed and merged to `main`, the changes will be
+ built and verified on [CircleCI](https://circleci.com/gh/lansingcodes/slackbot)
+ automatically before being deployed to Heroku.
+ 
+-The primary Humanity Codes account has administrator access to both CircleCI
+-and Heroku. Additional administrators can be added by invitation only.
++Ask an existing Lansing Codes administrator for access to the deployment
++services. Additional administrators can be added by invitation only.
+diff --git a/spec/lib/helpers/shorten-url-spec.js b/spec/lib/helpers/shorten-url-spec.js
+index 0897482..97b0060 100644
+--- a/spec/lib/helpers/shorten-url-spec.js
++++ b/spec/lib/helpers/shorten-url-spec.js
+@@ -1,9 +1,15 @@
++const TinyURL = require('tinyurl')
+ const shortenUrl = require('../../../lib/helpers/shorten-url')
+ 
+ describe('shorten-url', () => {
+-  it('produces a URL beginning with "https://tinyurl.com/"', (done) => {
+-    shortenUrl('http://www.google.com', (shortUrl) => {
+-      expect(shortUrl.startsWith('https://tinyurl.com/')).toBeTrue()
++  it('passes the URL and shortened result through to the callback', (done) => {
++    const longUrl = 'https://www.meetup.com/example/event/123'
++    const shortUrl = 'https://tinyurl.com/example'
++    const shorten = spyOn(TinyURL, 'shorten').and.callFake((url, callback) => callback(shortUrl))
++
++    shortenUrl(longUrl, (result) => {
++      expect(shorten).toHaveBeenCalledWith(longUrl, jasmine.any(Function))
++      expect(result).toBe(shortUrl)
+       done()
+     })
+   })

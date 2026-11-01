@@ -1,0 +1,37 @@
+diff --git a/app/globals.css b/app/globals.css
+index c49d80e..7c91599 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -164,6 +164,19 @@ p {
+   background-size: cover;
+ }
+ 
++/* Keep event card titles readable above the global link rules. */
++.lc-event-title,
++.lc-event-title:hover,
++.lc-event-title:focus {
++  color: white;
++  background-color: transparent;
++}
++
++.lc-event-title:focus-visible {
++  outline: 2px solid white;
++  outline-offset: 3px;
++}
++
+ /* Event description links */
+ .lc-event-description a {
+   color: white;
+diff --git a/components/cards/CardEvent.tsx b/components/cards/CardEvent.tsx
+index 62232be..ce4b464 100644
+--- a/components/cards/CardEvent.tsx
++++ b/components/cards/CardEvent.tsx
+@@ -31,7 +31,7 @@ export default function CardEvent({ event, group }: CardEventProps) {
+               href={event.url}
+               rel="noreferrer noopener"
+               target="_blank"
+-              className="text-white no-underline hover:text-white hover:underline focus:text-white focus:underline focus:bg-transparent"
++              className="lc-event-title no-underline hover:underline focus:underline"
+             >
+               {event.name}
+             </a>

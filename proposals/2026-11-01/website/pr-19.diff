@@ -1,0 +1,1152 @@
+diff --git a/.gitignore b/.gitignore
+index f2b2cec..8cd3c5b 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -29,6 +29,9 @@ npm-debug.log*
+ yarn-debug.log*
+ yarn-error.log*
+ .pnpm-debug.log*
++firestore-debug.log*
++firebase-debug.log*
++ui-debug.log*
+ 
+ # env files (can opt-in for committing if needed)
+ .env
+diff --git a/README.md b/README.md
+index 3822c37..10d4888 100644
+--- a/README.md
++++ b/README.md
+@@ -90,7 +90,9 @@ Each developer sets up their own Firebase project for local development.
+ 
+ 1. In the left sidebar, click **Firestore Database** (under Databases).
+ 2. Click **Create database**.
+-3. Choose **Start in test mode** for local development, then click **Next**.
++3. Choose **Start in production mode**, then click **Next**. The server-side
++   Firebase Admin SDK can still access Firestore with its service account;
++   test mode would allow public clients to read and overwrite data.
+ 4. Pick any region and click **Enable**.
+ 
+ **3. Get service account credentials**
+@@ -158,9 +160,19 @@ npm run sync:sponsors  # just sponsors
+ 
+ These scripts automatically read `SYNC_SECRET` from your `.env.local` file.
+ 
++Run `npm test` and `npm run test:stack` before changing the sync code. The stack
++test needs the Firebase CLI on `PATH` or via `FIREBASE_BIN`; it uses a local
++demo Firestore emulator and never writes to staging or production. Event sync
++fetches every Meetup calendar before modifying Firestore. If a feed is
++unavailable or malformed, the sync fails and leaves the existing event
++collection in place. The scheduled function reports missing credentials and
++rejected sync requests as failures; check its Netlify function logs after a
++deployment or a manual **Run now**.
++See [sync rollout and recovery](docs/sync-rollout.md) before a production sync.
++
+ ## Other scripts
+ 
+-Build for production (also runs TypeScript type checking):
++Build for production (also runs lint, tests, and TypeScript type checking):
+ 
+ ```sh
+ npm run build
+@@ -175,8 +187,11 @@ npm run lint
+ ## Deployments
+ 
+ After a pull request is reviewed and merged to `main`, Netlify automatically
+-builds and publishes the site. The Netlify scheduled function runs every 2 hours
+-to sync the latest Meetup events into Firestore.
++builds and publishes the staging site. Production is deployed from `main` by
++the manually triggered [Deploy to production](.github/workflows/deploy-production.yml)
++GitHub Actions workflow after its environment approval. The Netlify scheduled
++function runs every 2 hours on each published site to sync Meetup events,
++groups, and sponsors into that site's Firestore project.
+ 
+ For both staging and production, Netlify runs `npm run build` and deploys the
+ resulting `.next` directory via `@netlify/plugin-nextjs`.
+diff --git a/dev-tools/sync-safety-smoke.ts b/dev-tools/sync-safety-smoke.ts
+new file mode 100644
+index 0000000..beb2150
+--- /dev/null
++++ b/dev-tools/sync-safety-smoke.ts
+@@ -0,0 +1,73 @@
++import assert from 'node:assert/strict'
++import { deleteApp } from 'firebase-admin/app'
++import { getFirebaseAdmin, getFirestore } from '../lib/firebase/admin'
++import { EventSyncInProgressError, syncEvents } from '../lib/sync/events'
++
++if (!['127.0.0.1:8085', 'localhost:8085'].includes(process.env.FIRESTORE_EMULATOR_HOST || '') ||
++    process.env.FIREBASE_PROJECT_ID !== 'demo-lansingcodes') {
++  throw new Error('The sync smoke test requires the local demo-lansingcodes Firestore emulator')
++}
++
++async function main () {
++  const db = getFirestore()
++  const eventsRef = db.collection('events')
++  const existing = eventsRef.doc('existing-event')
++  const replacement = eventsRef.doc('replacement-event')
++
++  try {
++    await existing.set({ group: 'devops', name: 'Existing event', startTime: Date.now() })
++
++    await assert.rejects(syncEvents(async () => {
++      throw new Error('Meetup feed unavailable')
++    }), /Meetup feed unavailable/)
++    assert.equal((await existing.get()).exists, true)
++    console.log('PASS: failed feed preserves the existing Firestore event')
++
++    await syncEvents(async () => ({
++      'replacement-event': { group: 'devops', name: 'Replacement event', startTime: Date.now() }
++    }))
++    assert.equal((await existing.get()).exists, false)
++    assert.equal((await replacement.get()).exists, true)
++    console.log('PASS: complete feed replaces stale events')
++
++    let signalFirstStarted!: () => void
++    let resumeFirst!: () => void
++    const firstStarted = new Promise<void>((resolve) => { signalFirstStarted = resolve })
++    const firstPaused = new Promise<void>((resolve) => { resumeFirst = resolve })
++    const firstRun = syncEvents(async () => {
++      signalFirstStarted()
++      await firstPaused
++      return { 'older-event': { group: 'devops', name: 'Older event', startTime: Date.now() } }
++    })
++    await firstStarted
++
++    let overlappingFeedLoaded = false
++    await assert.rejects(syncEvents(async () => {
++      overlappingFeedLoaded = true
++      return {}
++    }), EventSyncInProgressError)
++    assert.equal(overlappingFeedLoaded, false)
++    console.log('PASS: a second sync cannot start while the lease is active')
++
++    // Simulate a crashed or stalled first process whose lease has expired.
++    await db.collection('_sync_locks').doc('events').update({ expiresAt: 0 })
++    await syncEvents(async () => ({
++      'newer-event': { group: 'devops', name: 'Newer event', startTime: Date.now() },
++    }))
++    resumeFirst()
++    await assert.rejects(firstRun, /lease was lost/)
++    assert.equal((await eventsRef.doc('newer-event').get()).exists, true)
++    assert.equal((await eventsRef.doc('older-event').get()).exists, false)
++    console.log('PASS: an expired older run cannot replace a newer successful sync')
++  } finally {
++    await db.recursiveDelete(eventsRef)
++    await db.recursiveDelete(db.collection('_sync_locks'))
++    await db.terminate()
++    await deleteApp(getFirebaseAdmin())
++  }
++}
++
++main().catch(error => {
++  console.error(error)
++  process.exitCode = 1
++})
+diff --git a/docs/sync-rollout.md b/docs/sync-rollout.md
+new file mode 100644
+index 0000000..545627e
+--- /dev/null
++++ b/docs/sync-rollout.md
+@@ -0,0 +1,69 @@
++# Firestore sync rollout and recovery
++
++The active `website` deployment writes the `events`, `groups`, and `sponsors`
++collections. The sync replaces each collection from Meetup feeds or the
++repository JSON files. Use this checklist for a staging rehearsal and before
++the first production sync after a code change.
++
++## Admin instructions for this change
++
++1. Review and merge [website PR #18](https://github.com/lansingcodes/website/pull/18)
++   first. Retarget [website PR #19](https://github.com/lansingcodes/website/pull/19)
++   from `fix/website-security-audit` to `main`, verify that its checks pass,
++   then merge it. A merge to `main` publishes the staging Netlify site. Do not
++   start the production workflow yet.
++2. In Netlify, open the **lansingcodes-staging** site. Under **Site
++   configuration → Environment variables**, confirm that its Firebase project
++   ID is `lansing-codes-staging`, either in `FIREBASE_PROJECT_ID` or the
++   `project_id` field of `FIREBASE_SERVICE_ACCOUNT`. Confirm it has the service
++   account settings and `SYNC_SECRET`. Check variable presence and the project
++   ID only; do not paste a service account or secret into a PR or Slack.
++3. In the Firebase console, open **lansing-codes-staging → Firestore Database →
++   Data → events**. Record the current document count and a few document IDs.
++   In Netlify, open **lansingcodes-staging → Cloud compute → Functions →
++   scheduled-sync** and use **Run now**. Check the invocation and function logs
++   for success. Refresh the Firestore collection and compare counts and sample
++   records with the Meetup calendars. A failed feed should produce a failed
++   invocation while leaving the prior event documents in place. Do not force a
++   failed feed just to test this on the shared staging project; the repository's
++   local Firestore emulator smoke test covers that case.
++4. Verify the staging read path from Slackbot in a non-production workspace.
++   We ran PR #100 locally against `lansing-codes-staging`: `upcoming events`
++   returned three staging records on 2026-10-28. Repeat after the staging
++   website sync if the collection changed. This is a read-only Slackbot check;
++   it does not prove the website writer is configured correctly.
++5. In the Netlify dashboard and any Heroku or other scheduled jobs, identify
++   every deployment that can write `events`, `groups`, or `sponsors`. In
++   particular, check the old `api` deployment's environment and recent logs.
++   Confirm one active writer per Firestore project before production rollout.
++   Decide how to retire any redundant writer only after identifying its callers.
++6. Before production deployment, export the three production collections as
++   described below and record their counts and representative IDs. Then run
++   the repository's **Deploy to production** GitHub Action from `main` after
++   the required environment approval. Verify the production Netlify site
++   `lansingcodes-www` points to Firebase project `lansing-codes`, and confirm
++   its `scheduled-sync` function succeeds. Compare the collection after sync
++   with the snapshot and check event display on the website and Slackbot.
++   If the sync fails or the event count drops unexpectedly, stop further syncs
++   and investigate before another deployment or import.
++
++## Production backup command
++
++Have a project administrator export `events`, `groups`, and `sponsors` to a
++Cloud Storage bucket in the same project's region. Managed export requires
++billing, an eligible bucket, and appropriate permissions. Record the export
++operation and wait for it to complete before syncing. Substitute the approved
++production bucket and confirm the project ID before running:
++
++```sh
++gcloud firestore export gs://BUCKET/website-pre-sync \
++  --collection-ids=events,groups,sponsors \
++  --database='(default)' \
++  --project=lansing-codes
++```
++
++See [Firestore export and import](https://docs.cloud.google.com/firestore/native/docs/manage-data/export-import)
++for prerequisites, operation status, and recovery. Do not run an import over a
++live database without a reviewed recovery plan. Netlify documents
++[scheduled function runs](https://docs.netlify.com/build/functions/scheduled-functions/)
++and [function logs](https://docs.netlify.com/build/functions/logs/).
+diff --git a/firebase.json b/firebase.json
+new file mode 100644
+index 0000000..9c99643
+--- /dev/null
++++ b/firebase.json
+@@ -0,0 +1,7 @@
++{
++  "emulators": {
++    "firestore": {
++      "port": 8085
++    }
++  }
++}
+diff --git a/lib/firebase/admin.ts b/lib/firebase/admin.ts
+index 45dd90b..3a1202c 100644
+--- a/lib/firebase/admin.ts
++++ b/lib/firebase/admin.ts
+@@ -29,6 +29,10 @@ export function getFirebaseAdmin(): App {
+ 
+   const { projectId, clientEmail, privateKey } = getCredentials()
+ 
++  if (process.env.FIRESTORE_EMULATOR_HOST && projectId) {
++    return initializeApp({ projectId }, APP_NAME)
++  }
++
+   if (!projectId || !clientEmail || !privateKey) {
+     throw new Error(
+       'Missing Firebase credentials. Set FIREBASE_SERVICE_ACCOUNT, or FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in .env.local',
+diff --git a/lib/meetup/fetchEventsForGroup.ts b/lib/meetup/fetchEventsForGroup.ts
+index b406dfe..939da29 100644
+--- a/lib/meetup/fetchEventsForGroup.ts
++++ b/lib/meetup/fetchEventsForGroup.ts
+@@ -8,14 +8,12 @@ const meetupClient = axios.create({
+ export async function fetchEventsForGroup(
+   groupKey: string,
+   group: { slug?: string },
++  getCalendar: (path: string) => Promise<{ data: string }> = (path) => meetupClient.get(path),
+ ): Promise<Record<string, unknown>> {
+   if (!group.slug) return {}
+ 
+-  try {
+-    const response = await meetupClient.get(`/${group.slug}/events/ical/`)
+-    return icalToEvents(groupKey, response.data)
+-  } catch (error) {
+-    console.error(`Failed to get events for group ${groupKey}:`, error)
+-    return {}
+-  }
++  // A failed feed must abort the full-replacement sync before it deletes
++  // this group's existing Firestore events.
++  const response = await getCalendar(`/${group.slug}/events/ical/`)
++  return icalToEvents(groupKey, response.data)
+ }
+diff --git a/lib/meetup/icalToEvents.ts b/lib/meetup/icalToEvents.ts
+index 80bd992..22bf0aa 100644
+--- a/lib/meetup/icalToEvents.ts
++++ b/lib/meetup/icalToEvents.ts
+@@ -1,4 +1,4 @@
+-import ical2json from 'ical2json'
++import { convert } from 'ical2json'
+ import { parseName } from './helpers/parseName'
+ import { parseDescription } from './helpers/parseDescription'
+ import { parseVenue } from './helpers/parseVenue'
+@@ -7,8 +7,10 @@ import { parseStartTime } from './helpers/parseStartTime'
+ import type { Event } from '@/lib/firestore/events'
+ 
+ export function icalToEvents(groupKey: string, ical: string): Record<string, Omit<Event, 'id'> & { id: string }> {
+-  const icalJson = ical2json.convert(ical)
+-  if (!icalJson.VCALENDAR) return {}
++  const icalJson = convert(ical)
++  if (!icalJson.VCALENDAR) {
++    throw new Error('Meetup returned a calendar without VCALENDAR')
++  }
+ 
+   const events: Record<string, Omit<Event, 'id'> & { id: string }> = {}
+   ;(icalJson.VCALENDAR as Record<string, unknown>[]).forEach((calendar: Record<string, unknown>) => {
+diff --git a/lib/sync/events.ts b/lib/sync/events.ts
+index ad80ae8..bf4a095 100644
+--- a/lib/sync/events.ts
++++ b/lib/sync/events.ts
+@@ -1,26 +1,76 @@
++import { randomUUID } from 'node:crypto'
+ import { getFirestore } from '@/lib/firebase/admin'
+ import { fetchEventsForAllGroups } from '@/lib/meetup/fetchEventsForAllGroups'
+ 
+-// Full-replace sync: fetch all current Meetup events, write them to
+-// Firestore, then delete any docs that weren't in the new set. Writing
+-// before deleting avoids a window where events are missing from the site.
+-export async function syncEvents() {
++const LEASE_MS = 10 * 60 * 1000
++const WRITES_PER_TRANSACTION = 200
++
++export class EventSyncInProgressError extends Error {
++  constructor() {
++    super('An event sync is already running')
++    this.name = 'EventSyncInProgressError'
++  }
++}
++
++// A Firestore lease coordinates scheduled and manual syncs across instances.
++// Every write transaction also checks ownership, so a process that outlives
++// its lease cannot overwrite a newer run's events.
++export async function syncEvents(loadEvents: typeof fetchEventsForAllGroups = fetchEventsForAllGroups) {
+   const db = getFirestore()
+-  const eventsRef = db.collection('events')
++  const lockRef = db.collection('_sync_locks').doc('events')
++  const owner = randomUUID()
+ 
+-  // Fetch new events first, before any deletions
+-  const events = await fetchEventsForAllGroups()
+-  const newEventIds = new Set(Object.keys(events))
++  await db.runTransaction(async (transaction) => {
++    const lock = await transaction.get(lockRef)
++    if (lock.exists && Number(lock.get('expiresAt')) > Date.now()) {
++      throw new EventSyncInProgressError()
++    }
++    transaction.set(lockRef, { owner, expiresAt: Date.now() + LEASE_MS })
++  })
+ 
+-  // Write new events
+-  await Promise.all(
+-    Object.entries(events).map(([id, event]) =>
+-      eventsRef.doc(id).set(event as Record<string, unknown>),
+-    ),
+-  )
++  let syncError: unknown
++  try {
++    // Fetch every feed before replacing any event documents.
++    const events = await loadEvents()
++    const eventsRef = db.collection('events')
++    const newEventIds = new Set(Object.keys(events))
++    const existingDocs = await eventsRef.listDocuments()
++    const staleDocs = existingDocs.filter((doc) => !newEventIds.has(doc.id))
++    const operations = [
++      ...Object.entries(events).map(([id, event]) => ({
++        kind: 'set' as const,
++        ref: eventsRef.doc(id),
++        value: event as Record<string, unknown>,
++      })),
++      ...staleDocs.map((ref) => ({ kind: 'delete' as const, ref })),
++    ]
+ 
+-  // Delete stale events that weren't in the new fetch
+-  const existingDocs = await eventsRef.listDocuments()
+-  const staleDocs = existingDocs.filter((doc) => !newEventIds.has(doc.id))
+-  await Promise.all(staleDocs.map((doc) => doc.delete()))
++    for (let start = 0; start < operations.length; start += WRITES_PER_TRANSACTION) {
++      const chunk = operations.slice(start, start + WRITES_PER_TRANSACTION)
++      await db.runTransaction(async (transaction) => {
++        const lock = await transaction.get(lockRef)
++        if (lock.get('owner') !== owner || Number(lock.get('expiresAt')) <= Date.now()) {
++          throw new Error('Event sync lease was lost before applying changes')
++        }
++        transaction.update(lockRef, { expiresAt: Date.now() + LEASE_MS })
++        for (const operation of chunk) {
++          if (operation.kind === 'set') transaction.set(operation.ref, operation.value)
++          else transaction.delete(operation.ref)
++        }
++      })
++    }
++  } catch (error) {
++    syncError = error
++    throw error
++  } finally {
++    try {
++      await db.runTransaction(async (transaction) => {
++        const lock = await transaction.get(lockRef)
++        if (lock.get('owner') === owner) transaction.delete(lockRef)
++      })
++    } catch (error) {
++      if (!syncError) throw error
++      console.error('Failed to release event sync lease:', error)
++    }
++  }
+ }
+diff --git a/netlify/functions/scheduled-sync.ts b/netlify/functions/scheduled-sync.ts
+index a73491f..1fe02f1 100644
+--- a/netlify/functions/scheduled-sync.ts
++++ b/netlify/functions/scheduled-sync.ts
+@@ -5,12 +5,9 @@ export default async function handler() {
+   const baseUrl = process.env.URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+   const syncSecret = process.env.SYNC_SECRET
+ 
+-  if (!syncSecret) {
+-    console.error('SYNC_SECRET not set — skipping scheduled sync')
+-    return
+-  }
+-
+   try {
++    if (!syncSecret) throw new Error('SYNC_SECRET not set')
++
+     const response = await fetch(`${baseUrl}/api/sync/all`, {
+       method: 'POST',
+       headers: {
+@@ -19,13 +16,13 @@ export default async function handler() {
+     })
+ 
+     if (!response.ok) {
+-      const body = await response.text()
+-      console.error(`Scheduled sync failed (Node ${process.version}):`, response.status, body)
++      throw new Error(`Sync endpoint returned HTTP ${response.status}`)
+     } else {
+       console.log(`Scheduled sync succeeded (Node ${process.version})`)
+     }
+   } catch (error) {
+-    console.error('Scheduled sync error:', error)
++    console.error('Scheduled sync failed:', error)
++    throw error
+   }
+ }
+ 
+diff --git a/package-lock.json b/package-lock.json
+index 7376434..d3a7767 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -36,6 +36,7 @@
+         "eslint": "^9",
+         "eslint-config-next": "16.1.6",
+         "tailwindcss": "^4",
++        "tsx": "^4.23.15",
+         "typescript": "^5"
+       }
+     },
+@@ -331,6 +332,448 @@
+         "tslib": "^2.4.0"
+       }
+     },
++    "node_modules/@esbuild/aix-ppc64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.28.2.tgz",
++      "integrity": "sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "aix"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/android-arm": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.28.2.tgz",
++      "integrity": "sha512-kXXoiPVVGQcnIYGOeaovwOURpniDBpSq4A03qkQ+BMQqtGG6HYap3xne9C1O1yo4TR3qxlCX5IqqmX6fFo2Lqg==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/android-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.28.2.tgz",
++      "integrity": "sha512-5YfKeeI8qWfBZIX+u2xZC3Zlb3Os/gLS2sbEKM+I4ZOcsWmHS2WLysCcQZDAFRslDUU5Oiq44gf6PYN1vGwG5A==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/android-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.28.2.tgz",
++      "integrity": "sha512-O387ite7SzUyCcy3JQX4P4bLtEA7bLLkx+esve5JHnyYfNTxcVpXZo9jhdB0lTKN44gztELTdU7nS8Nr16Fs1Q==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/darwin-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.28.2.tgz",
++      "integrity": "sha512-n4KqkOQrraxHJcgjM1RvwbigfQKIKJVpM7xp+KsxiyUSrRdIXnt73VhrPAx0fV44hgfmIVKjxMN9J1t5jySVkw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/darwin-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.28.2.tgz",
++      "integrity": "sha512-uq6suIWYP37qzGddBKPw5QEQPi6HiLGsO7UmkpfyaYNQ3D+rN6w6WfwH+nuqcGXWvawGwxOEroO4YGnFh95azw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/freebsd-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.28.2.tgz",
++      "integrity": "sha512-n+I0BTSRIoy+d6RPKnEVwql5UwBJolytvY4mAOIEJorKlqgPII8ix6slVVrfZ5Tnj7glIZvloylbB/EJPMWEXw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/freebsd-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.28.2.tgz",
++      "integrity": "sha512-78XJTJkvPs0kz2w61301PJjXl4g7q3JqiYMZ/M/yVI73EHBrCRTgkhu9oqG7vPqq+a/yadEW8aD+agKlk5xrmg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-arm": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.28.2.tgz",
++      "integrity": "sha512-XlDnu2q5yoqems+xay6wSAcg9DDD7K9RLKZEBOMZm3ckNpJBvOX20tSfby8KfrrhINDyv9V2YVZKY/SpoGJI8w==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.28.2.tgz",
++      "integrity": "sha512-pW4AC0P3it8c7do9MVM4p51FzHzdM/TZrerurgRcHJ2WTa1VQ1CIq18xncfpBJw4ojkiZZrKW2yIBWBP92j6Ug==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-ia32": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.28.2.tgz",
++      "integrity": "sha512-CYbnj78HsIeA+DhgUKgFCfvNsTHFhMMrinUrMZpDXJXKN8T3XViTZ/+wtHeVxEWY8ewSzTFN+nRmSwO2tZaLUQ==",
++      "cpu": [
++        "ia32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-loong64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.28.2.tgz",
++      "integrity": "sha512-buwkd8nsph4R+ajRvw0qM5Hja/TXQow3ptzWO2EbG/cqcIkHloRrdlBtQlshyYGTNFvfkfJ5tpPLVkY4DtsPfQ==",
++      "cpu": [
++        "loong64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-mips64el": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.28.2.tgz",
++      "integrity": "sha512-ZVykbDyk7519VwiNb9Lcj9m8XM6v5V9uKPvrEMkkEedVewf+0itkhahp4HDpgERXhwLRpWFypsGbG/J8s0QjJA==",
++      "cpu": [
++        "mips64el"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-ppc64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.28.2.tgz",
++      "integrity": "sha512-CAXl+Dtd9UUuJd8pKKdwh6MLm3MUMiqMPmhZ3tTSXPqfyQ3vDl6R5hZdZ/kYojK4ofXtdfSv1tFq8XzWx3heNQ==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-riscv64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.28.2.tgz",
++      "integrity": "sha512-GeXCej4IQtU1B+QlDV8W/RRvbzI3O/Stss+/bCXv4lZls5WGRtu2a+3JkA3i4qIUlMXpcHebWpF8AkJhATowuA==",
++      "cpu": [
++        "riscv64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-s390x": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.28.2.tgz",
++      "integrity": "sha512-3H1weTYZPxt/WOhByszQZybS9w5lKzUn1FDMsgEChbHWQwHYQQRfBxgCcZvPhjHfKyJjIievvMmEUawJrdY9Dg==",
++      "cpu": [
++        "s390x"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.28.2.tgz",
++      "integrity": "sha512-4xTZr1FUmSoQW4XIWmit3tzQrUTZM+N3P0XV8xROKYF50XfI7xeO90+1bZvNwxIufQ9hDQVRJH5YhgPVF8A/HQ==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/netbsd-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.28.2.tgz",
++      "integrity": "sha512-sSATRjPeDBg3pdgHoQfoYBob11Kk1FGa9lui5RIHZCoCkJa9QKlvl3/vKz2usCmYYjs7ymJR/2Nnsqe+Hjt5nw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "netbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/netbsd-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.28.2.tgz",
++      "integrity": "sha512-lqnzCV+mM0gIADaKihiCg6ifgfU2L3h5E33rNQBN1Y4MaVGnzryzmvvf7UHxprpQdE8hpqLolJ9Rl+SkIRDpyw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "netbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/openbsd-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.28.2.tgz",
++      "integrity": "sha512-AL2qJILH7lNjrDmCQDvdxMfAUIv8KMNZOvrwAQ8i8//ntL9FflhOyMJ8OZSMBb8/AWXe3/5v5S20y3zCoZWKoQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/openbsd-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.28.2.tgz",
++      "integrity": "sha512-QtiuPytchRyC4rwUKhexJdQKvDuZ6hWloi3igqPQNUJCS1/v9EiO3UTOXR6A3FoMo4fnAKbWJdqaIwhOzh8qEw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/openharmony-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.28.2.tgz",
++      "integrity": "sha512-WkhYDmpTjLvGlScA1rwjRUmhl4k8oXR3cIbtqWmELgU/dFeHHlEllxDvdWcNJV9rbzCexB5vz8gtNewWLgCT7Q==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openharmony"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/sunos-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.28.2.tgz",
++      "integrity": "sha512-GPMSkTOtMnv2U2F8gxe4Io6qmVs+YKyp832Etqqxr0hFngmXQ3rzwytelm3GIn7T4VviRUlf3sOgBOiTdvaf7g==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "sunos"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/win32-arm64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.28.2.tgz",
++      "integrity": "sha512-PIhhEkE9uPBleRBrQEJpUn7MBnibZzbGzYWPmY3x+YoVg/95zbjB4CxPPOQ8l5tYYM4mMaCthF8/1DIfBQQyWQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/win32-ia32": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.28.2.tgz",
++      "integrity": "sha512-YmJbfTlvU7Sdn9BB+4PRES4oB6pxgS37MAONj+hBr/cpXS1aBPKXxNnDbu+QCWPj0o9dgyxeq79g6c5P8KeuYA==",
++      "cpu": [
++        "ia32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/win32-x64": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.28.2.tgz",
++      "integrity": "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/@eslint-community/eslint-utils": {
+       "version": "4.9.1",
+       "resolved": "https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.9.1.tgz",
+@@ -4150,6 +4593,48 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/esbuild": {
++      "version": "0.28.2",
++      "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
++      "integrity": "sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "bin": {
++        "esbuild": "bin/esbuild"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "optionalDependencies": {
++        "@esbuild/aix-ppc64": "0.28.2",
++        "@esbuild/android-arm": "0.28.2",
++        "@esbuild/android-arm64": "0.28.2",
++        "@esbuild/android-x64": "0.28.2",
++        "@esbuild/darwin-arm64": "0.28.2",
++        "@esbuild/darwin-x64": "0.28.2",
++        "@esbuild/freebsd-arm64": "0.28.2",
++        "@esbuild/freebsd-x64": "0.28.2",
++        "@esbuild/linux-arm": "0.28.2",
++        "@esbuild/linux-arm64": "0.28.2",
++        "@esbuild/linux-ia32": "0.28.2",
++        "@esbuild/linux-loong64": "0.28.2",
++        "@esbuild/linux-mips64el": "0.28.2",
++        "@esbuild/linux-ppc64": "0.28.2",
++        "@esbuild/linux-riscv64": "0.28.2",
++        "@esbuild/linux-s390x": "0.28.2",
++        "@esbuild/linux-x64": "0.28.2",
++        "@esbuild/netbsd-arm64": "0.28.2",
++        "@esbuild/netbsd-x64": "0.28.2",
++        "@esbuild/openbsd-arm64": "0.28.2",
++        "@esbuild/openbsd-x64": "0.28.2",
++        "@esbuild/openharmony-arm64": "0.28.2",
++        "@esbuild/sunos-x64": "0.28.2",
++        "@esbuild/win32-arm64": "0.28.2",
++        "@esbuild/win32-ia32": "0.28.2",
++        "@esbuild/win32-x64": "0.28.2"
++      }
++    },
+     "node_modules/escalade": {
+       "version": "3.2.0",
+       "resolved": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz",
+@@ -4922,6 +5407,21 @@
+         "node": ">=12.20.0"
+       }
+     },
++    "node_modules/fsevents": {
++      "version": "2.3.3",
++      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
++      "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
++      }
++    },
+     "node_modules/function-bind": {
+       "version": "1.1.2",
+       "resolved": "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz",
+@@ -8419,6 +8919,25 @@
+       "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==",
+       "license": "0BSD"
+     },
++    "node_modules/tsx": {
++      "version": "4.23.15",
++      "resolved": "https://registry.npmjs.org/tsx/-/tsx-4.23.15.tgz",
++      "integrity": "sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "esbuild": "~0.28.0"
++      },
++      "bin": {
++        "tsx": "dist/cli.mjs"
++      },
++      "engines": {
++        "node": ">=18.0.0"
++      },
++      "optionalDependencies": {
++        "fsevents": "~2.3.3"
++      }
++    },
+     "node_modules/type-check": {
+       "version": "0.4.0",
+       "resolved": "https://registry.npmjs.org/type-check/-/type-check-0.4.0.tgz",
+diff --git a/package.json b/package.json
+index 0fc11ea..88d6a1a 100644
+--- a/package.json
++++ b/package.json
+@@ -8,12 +8,13 @@
+     "build": "next build",
+     "start": "next start",
+     "lint": "eslint",
+-    "test": "node --experimental-strip-types --test",
++    "test": "tsx --test test/*.test.mjs test/*.test.ts",
++    "test:stack": "bash scripts/run-sync-safety-smoke.sh",
+     "sync": "npm run sync:all",
+-    "sync:all": "curl -s -X POST http://localhost:3000/api/sync/all -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\"",
+-    "sync:events": "curl -s -X POST http://localhost:3000/api/sync/events -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\"",
+-    "sync:groups": "curl -s -X POST http://localhost:3000/api/sync/groups -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\"",
+-    "sync:sponsors": "curl -s -X POST http://localhost:3000/api/sync/sponsors -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\""
++    "sync:all": "curl --fail-with-body -sS -X POST http://localhost:3000/api/sync/all -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\"",
++    "sync:events": "curl --fail-with-body -sS -X POST http://localhost:3000/api/sync/events -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\"",
++    "sync:groups": "curl --fail-with-body -sS -X POST http://localhost:3000/api/sync/groups -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\"",
++    "sync:sponsors": "curl --fail-with-body -sS -X POST http://localhost:3000/api/sync/sponsors -H \"Authorization: Bearer $(grep '^SYNC_SECRET=' .env.local | cut -d'=' -f2-)\""
+   },
+   "dependencies": {
+     "@date-fns/tz": "^1.5.0",
+@@ -44,6 +45,7 @@
+     "eslint": "^9",
+     "eslint-config-next": "16.1.6",
+     "tailwindcss": "^4",
++    "tsx": "^4.23.15",
+     "typescript": "^5"
+   }
+ }
+diff --git a/scripts/run-sync-safety-smoke.sh b/scripts/run-sync-safety-smoke.sh
+new file mode 100644
+index 0000000..b5dfc83
+--- /dev/null
++++ b/scripts/run-sync-safety-smoke.sh
+@@ -0,0 +1,16 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++firebase_bin="${FIREBASE_BIN:-$(command -v firebase || true)}"
++if [[ -z "$firebase_bin" ]]; then
++  echo 'Install the Firebase CLI or set FIREBASE_BIN to its executable.' >&2
++  exit 1
++fi
++
++cd "$root"
++"$firebase_bin" emulators:exec \
++  --only firestore \
++  --project demo-lansingcodes \
++  --config firebase.json \
++  'FIREBASE_PROJECT_ID=demo-lansingcodes ./node_modules/.bin/tsx dev-tools/sync-safety-smoke.ts'
+diff --git a/test/firebase-admin.test.mjs b/test/firebase-admin.test.mjs
+index fede25b..7b2d986 100644
+--- a/test/firebase-admin.test.mjs
++++ b/test/firebase-admin.test.mjs
+@@ -6,7 +6,7 @@ import { getFirebaseAdmin, getFirestore } from '../lib/firebase/admin.ts'
+ 
+ const names = [
+   'FIREBASE_SERVICE_ACCOUNT', 'FIREBASE_PROJECT_ID',
+-  'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'
++  'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY', 'FIRESTORE_EMULATOR_HOST'
+ ]
+ const previous = Object.fromEntries(names.map(name => [name, process.env[name]]))
+ 
+@@ -45,3 +45,12 @@ test('initializes Firebase Admin from service account JSON', () => {
+   assert.equal(getFirebaseAdmin(), app)
+   assert.equal(getFirestore().projectId, 'demo-lansingcodes')
+ })
++
++test('uses the local Firestore emulator without a service account', () => {
++  for (const name of names) delete process.env[name]
++  process.env.FIREBASE_PROJECT_ID = 'demo-lansingcodes'
++  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8085'
++
++  const app = getFirebaseAdmin()
++  assert.equal(app.options.projectId, 'demo-lansingcodes')
++})
+diff --git a/test/meetup-sync.test.ts b/test/meetup-sync.test.ts
+new file mode 100644
+index 0000000..5a32c94
+--- /dev/null
++++ b/test/meetup-sync.test.ts
+@@ -0,0 +1,21 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { fetchEventsForGroup } from '../lib/meetup/fetchEventsForGroup'
++import { icalToEvents } from '../lib/meetup/icalToEvents'
++
++test('a failed Meetup feed aborts event replacement', async () => {
++  await assert.rejects(
++    fetchEventsForGroup('devops', { slug: 'devops' }, async () => {
++      throw new Error('Meetup unavailable')
++    }),
++    /Meetup unavailable/,
++  )
++})
++
++test('a malformed calendar aborts event replacement', () => {
++  assert.throws(() => icalToEvents('devops', 'not a calendar'), /without VCALENDAR/)
++})
++
++test('a valid empty calendar remains a valid result', () => {
++  assert.deepEqual(icalToEvents('devops', 'BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR'), {})
++})
+diff --git a/test/scheduled-sync.test.ts b/test/scheduled-sync.test.ts
+new file mode 100644
+index 0000000..8053975
+--- /dev/null
++++ b/test/scheduled-sync.test.ts
+@@ -0,0 +1,54 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import handler from '../netlify/functions/scheduled-sync'
++
++test('scheduled sync fails visibly when its secret is missing', async (context) => {
++  const previous = process.env.SYNC_SECRET
++  delete process.env.SYNC_SECRET
++  context.after(() => {
++    if (previous === undefined) delete process.env.SYNC_SECRET
++    else process.env.SYNC_SECRET = previous
++  })
++  context.mock.method(console, 'error', () => {})
++  context.mock.method(globalThis, 'fetch', async () => { throw new Error('fetch should not run') })
++
++  await assert.rejects(handler(), /SYNC_SECRET not set/)
++})
++
++test('scheduled sync fails visibly when the API rejects the request', async (context) => {
++  const previous = process.env.SYNC_SECRET
++  process.env.SYNC_SECRET = 'local-test-only'
++  context.after(() => {
++    if (previous === undefined) delete process.env.SYNC_SECRET
++    else process.env.SYNC_SECRET = previous
++  })
++  context.mock.method(console, 'error', () => {})
++  context.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 503 }))
++
++  await assert.rejects(handler(), /HTTP 503/)
++})
++
++test('scheduled sync posts to the configured site with its bearer token', async (context) => {
++  const previousSecret = process.env.SYNC_SECRET
++  const previousUrl = process.env.URL
++  process.env.SYNC_SECRET = 'local-test-only'
++  process.env.URL = 'https://example.test'
++  context.after(() => {
++    if (previousSecret === undefined) delete process.env.SYNC_SECRET
++    else process.env.SYNC_SECRET = previousSecret
++    if (previousUrl === undefined) delete process.env.URL
++    else process.env.URL = previousUrl
++  })
++  let requestedUrl = ''
++  let authorization = ''
++  context.mock.method(console, 'log', () => {})
++  context.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
++    requestedUrl = String(input)
++    authorization = new Headers(init?.headers).get('Authorization') || ''
++    return new Response(null, { status: 200 })
++  })
++
++  await handler()
++  assert.equal(requestedUrl, 'https://example.test/api/sync/all')
++  assert.equal(authorization, 'Bearer local-test-only')
++})

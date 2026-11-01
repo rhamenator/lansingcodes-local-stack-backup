@@ -1,0 +1,38 @@
+diff --git a/lib/meetup/helpers/parseStartTime.ts b/lib/meetup/helpers/parseStartTime.ts
+index 0953706..6418a88 100644
+--- a/lib/meetup/helpers/parseStartTime.ts
++++ b/lib/meetup/helpers/parseStartTime.ts
+@@ -10,7 +10,7 @@ export function parseStartTime(vevent: Record<string, string>): number | undefin
+   const timezoneIndex = dtstartKey.indexOf(tzDelim)
+   const timezoneName =
+     timezoneIndex >= 0
+-      ? dtstartKey.slice(timezoneIndex + tzDelim.length)
++      ? dtstartKey.slice(timezoneIndex + tzDelim.length).split(';', 1)[0]
+       : undefined
+   const dtstart = vevent[dtstartKey]
+   if (dtstart.length < 15) return undefined
+diff --git a/test/parseStartTime.test.mjs b/test/parseStartTime.test.mjs
+new file mode 100644
+index 0000000..198e757
+--- /dev/null
++++ b/test/parseStartTime.test.mjs
+@@ -0,0 +1,19 @@
++import assert from 'node:assert/strict'
++import { test } from 'node:test'
++import ical2json from 'ical2json'
++import { parseStartTime } from '../lib/meetup/helpers/parseStartTime.ts'
++
++function eventWithStart(property) {
++  const ical = `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:test\r\n${property}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`
++  return ical2json.convert(ical).VCALENDAR[0].VEVENT[0]
++}
++
++test('parses TZID before another DTSTART parameter', () => {
++  const event = eventWithStart('DTSTART;TZID=America/Detroit;VALUE=DATE-TIME:20270301T003000')
++  assert.equal(parseStartTime(event), Date.parse('2027-03-01T05:30:00Z'))
++})
++
++test('parses TZID after another DTSTART parameter', () => {
++  const event = eventWithStart('DTSTART;VALUE=DATE-TIME;TZID=America/Detroit:20270301T003000')
++  assert.equal(parseStartTime(event), Date.parse('2027-03-01T05:30:00Z'))
++})

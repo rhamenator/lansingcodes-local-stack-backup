@@ -1,0 +1,99 @@
+diff --git a/.github/CONTRIBUTING.md b/.github/CONTRIBUTING.md
+new file mode 100644
+index 0000000..1687c97
+--- /dev/null
++++ b/.github/CONTRIBUTING.md
+@@ -0,0 +1,62 @@
++# Lansing Codes Sign-in Sheet Contributing Guide
++
++Thanks for helping improve the event sign-in sheet. Please read the
++[Code of Conduct](https://www.lansing.codes/code-of-conduct/) before contributing.
++
++- [Issue Reporting Guidelines](#issue-reporting-guidelines)
++- [Pull Request Guidelines](#pull-request-guidelines)
++- [Development Setup](#development-setup)
++- [Local Testing](#local-testing)
++- [Deployments](#deployments)
++
++## Issue Reporting Guidelines
++
++Search [existing issues](https://github.com/lansingcodes/sign-in-sheet/issues)
++before opening a new one. For a bug, include the steps to reproduce it, what
++you expected, what happened, your browser and operating system, and a screenshot
++if it helps. For a feature request, explain the problem it would solve and the
++proposed behavior. Do not include private attendee information in an issue.
++
++## Pull Request Guidelines
++
++Create a focused branch from `main` and open a pull request back to `main`.
++Link the related issue, describe the change, and include the local checks you
++ran. If your change affects printing, attach a print-preview screenshot or
++describe the page count and layout you observed. Request a review from a
++maintainer before merging. Keep attendee details and credentials out of commits.
++
++## Development Setup
++
++You need [Git](https://git-scm.com/downloads), a text editor, a modern browser,
++and [Node.js](https://nodejs.org/) to run the local preview command below. A
++code editor with HTML, CSS, and JavaScript support is useful; no build step or
++service credentials are required for this static site.
++
++Fork the repository on GitHub, then clone your fork and enter the checkout:
++
++```sh
++git clone https://github.com/YOUR-USERNAME/sign-in-sheet.git
++cd sign-in-sheet
++```
++
++## Local Testing
++
++From the repository root, start a local server with `live-server`:
++
++```sh
++npx --yes live-server --port=8080 --no-browser
++```
++
++Open <http://127.0.0.1:8080/>; if that port is busy, open the URL that
++`live-server` prints instead. Enter an event title and try the page-count and
++line-number controls. Check the browser's print preview: the sign-in area should
++fit the chosen page count, and red editing instructions should not print. Also
++try a long title and a narrow browser window. Stop the server with Ctrl+C.
++
++## Deployments
++
++GitHub Pages serves this repository from the root of `main` at
++<https://lansingcodes.github.io/sign-in-sheet/>. After a reviewed pull request
++is merged into `main`, GitHub Pages builds the updated site. A maintainer
++should verify the deployment and the public page; contributors should not push
++directly to `main`.
+diff --git a/README.md b/README.md
+index 89d5dec..a482049 100644
+--- a/README.md
++++ b/README.md
+@@ -4,6 +4,15 @@ A sign-in sheet for Lansing tech events.
+ 
+ https://lansingcodes.github.io/sign-in-sheet/
+ 
++## Contents
++
++- [Code of Conduct](#code-of-conduct)
++- [Instructions](#instructions)
++- [Questions](#questions)
++- [Stay in touch](#stay-in-touch)
++- [Contributing](#contributing)
++- [License](#license)
++
+ ## Code of Conduct
+ 
+ All participants are expected to treat others with respect and follow our [Code of Conduct](https://www.lansing.codes/code-of-conduct/).
+@@ -31,6 +40,10 @@ project is exclusively for bug reports and feature requests.
+ -   [Website](https://www.lansing.codes)
+ -   [Newsletter](http://bit.ly/lansing-codes-newsletter)
+ 
++## Contributing
++
++See the [Contributing Guide](.github/CONTRIBUTING.md) for issue reports, pull
++requests, local testing, and deployment details.
+ 
+ ## License
+ 

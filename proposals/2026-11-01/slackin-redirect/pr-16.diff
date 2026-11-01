@@ -1,0 +1,25 @@
+diff --git a/README.md b/README.md
+index 7cd4900..b84eb99 100644
+--- a/README.md
++++ b/README.md
+@@ -7,6 +7,20 @@ Redirects traffic from slack.lansing.codes to our shared invite link. An admin c
+ This project is hosted on Netlify. The `_redirects` rule sends an HTTP 302 to
+ Slack; `index.html` retains a clickable fallback for static preview.
+ 
++## Questions
++
++For general support, ask in the [Lansing Codes Slack team](https://slack.lansing.codes/).
++Use this repository's [issues](https://github.com/lansingcodes/slackin-redirect/issues)
++for bug reports and feature requests about the redirect.
++
++## Stay in touch
++
++- [Slack](https://slack.lansing.codes/)
++- [Twitter](https://twitter.com/lansingcodes)
++- [Facebook](https://www.facebook.com/LansingCodes/)
++- [Website](https://www.lansing.codes/)
++- [Newsletter](https://www.lansing.codes/#newsletter)
++
+ ## License
+ 
+ [Hippocratic 2.1](https://firstdonoharm.dev)

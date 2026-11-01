@@ -1,0 +1,55 @@
+diff --git a/lib/meetup/helpers/parseAddress.ts b/lib/meetup/helpers/parseAddress.ts
+index 016b0b6..73abf9b 100644
+--- a/lib/meetup/helpers/parseAddress.ts
++++ b/lib/meetup/helpers/parseAddress.ts
+@@ -4,7 +4,7 @@ export function parseAddress(location: string): string {
+   if (!location) return ''
+   const from = location.lastIndexOf('(')
+   const to = location.lastIndexOf(')')
+-  if (from === -1 && to === -1) return ''
++  if (from === -1 || to <= from) return ''
+   const address = location.substring(from + 1, to)
+   return address.replace(/\\/g, '')
+ }
+diff --git a/lib/meetup/helpers/parseVenue.ts b/lib/meetup/helpers/parseVenue.ts
+index c95d855..62d920a 100644
+--- a/lib/meetup/helpers/parseVenue.ts
++++ b/lib/meetup/helpers/parseVenue.ts
+@@ -2,7 +2,8 @@
+ // the last "(" to extract just the venue name.
+ export function parseVenue(location: string): string {
+   if (!location) return ''
+-  const to = location.lastIndexOf('(')
+-  const venue = to >= 0 ? location.substring(0, to) : location
++  const from = location.lastIndexOf('(')
++  const to = location.lastIndexOf(')')
++  const venue = from >= 0 && to > from ? location.substring(0, from) : location
+   return venue.replace(/\\/g, '').trim()
+ }
+diff --git a/test/parseLocation.test.mjs b/test/parseLocation.test.mjs
+new file mode 100644
+index 0000000..7725947
+--- /dev/null
++++ b/test/parseLocation.test.mjs
+@@ -0,0 +1,21 @@
++import assert from 'node:assert/strict'
++import { test } from 'node:test'
++import { parseAddress } from '../lib/meetup/helpers/parseAddress.ts'
++import { parseVenue } from '../lib/meetup/helpers/parseVenue.ts'
++
++test('extracts venue and address from a balanced Meetup location', () => {
++  const location = 'Venue (123 Main St, Lansing MI)'
++  assert.equal(parseVenue(location), 'Venue')
++  assert.equal(parseAddress(location), '123 Main St, Lansing MI')
++})
++
++test('keeps an incomplete location visible without inventing an address', () => {
++  const location = 'Venue (123 Main St, Lansing MI'
++  assert.equal(parseVenue(location), location)
++  assert.equal(parseAddress(location), '')
++})
++
++test('does not treat a lone closing parenthesis as an address', () => {
++  assert.equal(parseVenue('Venue)'), 'Venue)')
++  assert.equal(parseAddress('Venue)'), '')
++})

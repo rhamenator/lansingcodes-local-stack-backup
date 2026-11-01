@@ -1,0 +1,199 @@
+diff --git a/.env.example b/.env.example
+index 5db49bc..2c9c2d1 100644
+--- a/.env.example
++++ b/.env.example
+@@ -8,6 +8,8 @@ NOTIFICATION_STORE=memory
+ ORGANIZER_BY_GROUP='{"catech":"U0123456789"}'
+ ORGANIZER_FIRST_NAME_BY_GROUP='{"catech":"Alex"}'
+ WELCOMER_BY_CHANNEL='{"C0123456789":"U0123456789"}'
++# Optional: welcome only people joining this channel; defaults to #general.
++# MEMBER_GREETING_CHANNEL_ID=C0123456789
+ EVENT_ANNOUNCEMENT_CHANNEL_ID=C0123456789
+ EVENT_GROUP_CHANNEL_IDS='{"catech":"C0123456789"}'
+ # APPROVED_TWEETER_IDS=U0123456789,U9876543210
+diff --git a/README.md b/README.md
+index 1c368b9..da73759 100644
+--- a/README.md
++++ b/README.md
+@@ -39,7 +39,7 @@ Notification history is stored in Firestore collection `slackbot_notifications`,
+ 
+ Before deploying, run `npm run preflight -- --expect-project YOUR_FIREBASE_PROJECT_ID --expect-team YOUR_SLACK_TEAM_ID` with the deployment environment variables loaded. It checks the expected project IDs, Slack bot identity, upcoming event reads, and persistent notification reads without posting a message. Add `--write-check` to write, read, and remove a unique notification record in that named project. Run this against a staging project first. The command does not validate the Socket Mode app token; use a live bot connection for that check.
+ 
+-Set `ORGANIZER_BY_GROUP`, `ORGANIZER_FIRST_NAME_BY_GROUP`, `WELCOMER_BY_CHANNEL`, `EVENT_ANNOUNCEMENT_CHANNEL_ID`, and `EVENT_GROUP_CHANNEL_IDS` for the deployed workspace. The old username and channel-name mappings remain as fallbacks. `APPROVED_TWEETER_IDS` restricts the optional X posting command to Slack user IDs; the four `TWITTER_*` variables supply the X app and user credentials. Keep all tokens outside the repository.
++Set `ORGANIZER_BY_GROUP`, `ORGANIZER_FIRST_NAME_BY_GROUP`, `WELCOMER_BY_CHANNEL`, `EVENT_ANNOUNCEMENT_CHANNEL_ID`, and `EVENT_GROUP_CHANNEL_IDS` for the deployed workspace. The old username and channel-name mappings remain as fallbacks. Set `MEMBER_GREETING_CHANNEL_ID` to the channel where newcomers should receive a one-time bot greeting; it defaults to `#general`. The bot must be in that channel and receive Slack's `member_joined_channel` event. The greeting includes the Code of Conduct and the `upcoming events` command. A separate notification to the configured human welcomer remains in place. `APPROVED_TWEETER_IDS` restricts the optional X posting command to Slack user IDs; the four `TWITTER_*` variables supply the X app and user credentials. Keep all tokens outside the repository.
+ 
+ To move scheduled event announcements out of `#general` (issue #63), create or choose a dedicated `#events` channel, invite the bot, and set `EVENT_ANNOUNCEMENT_CHANNEL_ID` to that channel's Slack ID in the bot's Heroku config. This also moves the scheduler's morning and no-new-events messages. Set `EVENT_GROUP_CHANNEL_IDS` to a JSON object such as `{"devops":"C0123456789"}` for optional group reminders; each target channel must also contain the bot. Use channel IDs from the deployed workspace, not IDs from a test workspace. Test the routing there before enabling the production schedule.
+ 
+@@ -53,7 +53,7 @@ Grant the Slack app the following bot scopes to match production:
+ 
+ `app_mentions:read`, `channels:join`, `channels:history`, `channels:read`, `chat:write`, `im:write`, `im:history`, `im:read`, `users:read`, `groups:history`, `groups:write`, `groups:read`, `mpim:history`, `mpim:write`, `mpim:read`
+ 
+-Enable these Socket Mode events: `app_mention`, `message.channels`, `message.im`, `message.groups`, `message.mpim`.
++Enable these Socket Mode events: `app_mention`, `message.channels`, `message.im`, `message.groups`, `message.mpim`, `member_joined_channel`.
+ 
+ ## License
+ 
+diff --git a/dev-tools/local-stack-smoke.js b/dev-tools/local-stack-smoke.js
+index 662b602..40e81f1 100644
+--- a/dev-tools/local-stack-smoke.js
++++ b/dev-tools/local-stack-smoke.js
+@@ -20,6 +20,7 @@ process.env.FIREBASE_WEB_CONFIG = JSON.stringify({
+   projectId
+ })
+ process.env.WELCOMER_BY_CHANNEL = JSON.stringify({ CGENERAL: 'UWELCOME' })
++process.env.MEMBER_GREETING_CHANNEL_ID = 'CGENERAL'
+ process.env.APPROVED_TWEETER_IDS = 'UAPPROVED'
+ process.env.EVENT_ANNOUNCEMENT_CHANNEL_ID = 'CGENERAL'
+ process.env.EVENT_GROUP_CHANNEL_IDS = JSON.stringify({ smoketest: 'CDEVOPS' })
+@@ -62,7 +63,7 @@ async function main () {
+   await eventDoc.set({ group: 'smoketest', name: eventName, url: eventUrl, startTime })
+   const robot = new Robot('local-adapter', false, 'slackbot')
+   robot.adapter = new LocalAdapter(robot)
+-  robot.adapter.self = { url: 'https://example.slack.com/' }
++  robot.adapter.self = { url: 'https://example.slack.com/', user_id: 'UBOT', team_id: 'TDEMO' }
+   robot.adapter.client = {
+     fetchConversation: async () => ({ name: 'general' }),
+     web: {
+@@ -81,6 +82,7 @@ async function main () {
+   }
+   require('../lib/initializers/events-responder')(robot)
+   require('../lib/initializers/mentioned-rooms-referencer')(robot)
++  require('../lib/initializers/new-member-greeter')(robot)
+   require('../lib/initializers/new-participant-notifier')(robot)
+   proxyquire('../lib/initializers/tweeter', {
+     '../helpers/tweet': localTweet,
+@@ -126,9 +128,12 @@ async function main () {
+     const joined = robot.brain.userForId('UNEW', { name: 'newcomer', room: 'CGENERAL' })
+     const joinNotice = waitForSend(robot.adapter, (room, lines) =>
+       room.room === 'UWELCOME' && lines.join(' ').includes('newcomer just joined general'))
++    const greeting = waitForSend(robot.adapter, (room, lines) =>
++      room.room === 'CGENERAL' && lines.join(' ').includes('<@UNEW> welcome to Lansing Codes!'))
+     await robot.adapter.receive(new EnterMessage(joined))
+-    await joinNotice
++    await Promise.all([joinNotice, greeting])
+     console.log('PASS: a join event notifies the configured welcomer')
++    console.log('PASS: a join event greets the member in the configured channel')
+ 
+     const denied = await sendText(robot, user, 'slackbot tweet blocked', (room, lines) =>
+       room.room === 'CGENERAL' && lines.join(' ').includes('No tweet for you!'))
+diff --git a/lib/initializers/new-member-greeter.js b/lib/initializers/new-member-greeter.js
+new file mode 100644
+index 0000000..fa0f01f
+--- /dev/null
++++ b/lib/initializers/new-member-greeter.js
+@@ -0,0 +1,48 @@
++// Description:
++//   Greet a person once when they join the workspace's welcome channel.
++//
++// Configuration:
++//   MEMBER_GREETING_CHANNEL_ID - Slack channel ID; defaults to #general.
++//
++// Notes:
++//   Uses the persistent notification store so a restart or another channel
++//   join does not send the same person another greeting.
++
++const getEventsCacher = require('../cachers/events-cacher')
++const postRoomMessage = require('../helpers/post-room-message')
++
++module.exports = (robot) => {
++  const notifications = getEventsCacher(robot)
++
++  robot.enter(async (message) => {
++    const user = message.envelope.user
++    const roomId = user?.room
++    if (!user?.id || !roomId || user.is_bot || user.bot_id ||
++        user.id === robot.adapter?.self?.user_id) return
++
++    const configuredRoom = process.env.MEMBER_GREETING_CHANNEL_ID
++    if (configuredRoom) {
++      if (roomId !== configuredRoom) return
++    } else {
++      let room = roomId
++      try {
++        room = (await robot.adapter.client?.fetchConversation(roomId))?.name || roomId
++      } catch (error) {
++        robot.logger.warn(`Could not look up greeting channel ${roomId}: ${error.message}`)
++      }
++      if (room !== 'general') return
++    }
++
++    const teamId = robot.adapter?.self?.team_id || 'workspace'
++    const notification = { id: `member-greeting:${teamId}:${user.id}` }
++    const greeting = `<@${user.id}> welcome to Lansing Codes! :wave: Please read our ` +
++      '<https://www.lansing.codes/code-of-conduct|Code of Conduct>. ' +
++      'Ask me for `upcoming events` whenever you want to see what is happening.'
++
++    try {
++      await notifications.deliverOnce(notification, () => postRoomMessage(robot, roomId, greeting))
++    } catch (error) {
++      robot.logger.error(`Could not greet new member ${user.id}: ${error.message}`)
++    }
++  })
++}
+diff --git a/spec/lib/initializers/new-member-greeter-spec.js b/spec/lib/initializers/new-member-greeter-spec.js
+new file mode 100644
+index 0000000..7c9ae4c
+--- /dev/null
++++ b/spec/lib/initializers/new-member-greeter-spec.js
+@@ -0,0 +1,61 @@
++const includeHubot = require('../../helpers/include-hubot')
++
++describe('new-member-greeter', () => {
++  includeHubot()
++
++  beforeEach(() => {
++    process.env.NOTIFICATION_STORE = 'memory'
++    require('../../../lib/initializers/new-member-greeter')(robot)
++  })
++
++  afterEach(() => {
++    delete process.env.MEMBER_GREETING_CHANNEL_ID
++    delete process.env.NOTIFICATION_STORE
++  })
++
++  it('greets a new member in general and does not repeat the greeting', async () => {
++    const sent = jasmine.createSpy('sent')
++    robot.adapter.on('send', sent)
++    const newcomer = robot.brain.userForId('UNEW', { name: 'newcomer', room: 'general' })
++
++    await hubotHelpers.receiveEntrance(newcomer)
++    await hubotHelpers.receiveEntrance(newcomer)
++
++    expect(sent.calls.count()).toBe(1)
++    expect(sent.calls.first().args[0].room).toBe('general')
++    expect(sent.calls.first().args[1][0]).toContain('<@UNEW> welcome to Lansing Codes!')
++    expect(sent.calls.first().args[1][0]).toContain('/code-of-conduct')
++    expect(sent.calls.first().args[1][0]).toContain('`upcoming events`')
++  })
++
++  it('uses the configured channel ID and ignores other channels and the bot itself', async () => {
++    process.env.MEMBER_GREETING_CHANNEL_ID = 'CWELCOME'
++    robot.adapter.self = { user_id: 'UBOT', team_id: 'TTEST' }
++    const sent = jasmine.createSpy('sent')
++    robot.adapter.on('send', sent)
++
++    await hubotHelpers.receiveEntrance(robot.brain.userForId('UOTHER', { room: 'COTHER' }))
++    await hubotHelpers.receiveEntrance(robot.brain.userForId('UBOT', { room: 'CWELCOME' }))
++    await hubotHelpers.receiveEntrance(robot.brain.userForId('UNEW', { room: 'CWELCOME' }))
++
++    expect(sent.calls.count()).toBe(1)
++    expect(sent.calls.first().args[0].room).toBe('CWELCOME')
++  })
++
++  it('does not record a greeting when Slack rejects the post', async () => {
++    process.env.MEMBER_GREETING_CHANNEL_ID = 'CWELCOME'
++    robot.adapter.client = { web: { chat: { postMessage: jasmine.createSpy('postMessage') } } }
++    robot.adapter.client.web.chat.postMessage.and.returnValues(
++      Promise.resolve({ ok: false, error: 'not_in_channel' }),
++      Promise.resolve({ ok: true })
++    )
++    spyOn(robot.logger, 'error')
++    const newcomer = robot.brain.userForId('UNEW', { room: 'CWELCOME' })
++
++    await hubotHelpers.receiveEntrance(newcomer)
++    await hubotHelpers.receiveEntrance(newcomer)
++
++    expect(robot.adapter.client.web.chat.postMessage.calls.count()).toBe(2)
++    expect(robot.logger.error).toHaveBeenCalled()
++  })
++})

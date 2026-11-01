@@ -1,0 +1,120 @@
+diff --git a/.env.local.example b/.env.local.example
+index 5921f3e..8471506 100644
+--- a/.env.local.example
++++ b/.env.local.example
+@@ -17,3 +17,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
+ # Get from: Mailchimp → Account & Billing → Extras → API keys → Create A Key
+ # Format: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-us19
+ MAILCHIMP_API_KEY=your-mailchimp-api-key-here
++
++# Optional audience override for non-production Mailchimp testing.
++# Leave unset to use the Lansing Codes production audience.
++# MAILCHIMP_LIST_ID=your-test-audience-id
+diff --git a/README.md b/README.md
+index 3822c37..09d855b 100644
+--- a/README.md
++++ b/README.md
+@@ -118,6 +118,12 @@ newlines.
+ 
+ #### Other variables
+ 
++For newsletter subscription testing, set `MAILCHIMP_API_KEY` to a key from
++your own Mailchimp account and `MAILCHIMP_LIST_ID` to that account's audience
++ID. If `MAILCHIMP_LIST_ID` is unset, the subscribe route uses the existing
++Lansing Codes audience ID. Keep test credentials in local or deployment
++environment variables; do not commit them.
++
+ | Variable | Description |
+ |----------|-------------|
+ | `SYNC_SECRET` | A random string used to protect the `/api/sync/*` routes. Generate one with `openssl rand -base64 32`. |
+diff --git a/app/api/subscribe/route.ts b/app/api/subscribe/route.ts
+index 380f087..6ac2ddf 100644
+--- a/app/api/subscribe/route.ts
++++ b/app/api/subscribe/route.ts
+@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
+ import { NextRequest, NextResponse } from 'next/server'
+ import { isValidEmail } from '@/lib/utils/isValidEmail'
+ 
+-const MAILCHIMP_LIST_ID = 'f13ffe3703'
++const DEFAULT_MAILCHIMP_LIST_ID = 'f13ffe3703'
+ 
+ // Same reply whether or not the address is already on the list, so the
+ // endpoint can't be used to look up who subscribes
+@@ -10,7 +10,18 @@ const SUCCESS_MESSAGE =
+   "Almost finished! If you aren't already subscribed, check your email to confirm your subscription."
+ 
+ export async function POST(request: NextRequest) {
+-  const { email } = await request.json()
++  let body: unknown
++  try {
++    body = await request.json()
++  } catch {
++    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
++  }
++
++  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
++    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
++  }
++
++  const { email } = body as { email?: unknown }
+ 
+   if (!email || typeof email !== 'string') {
+     return NextResponse.json(
+@@ -36,12 +47,13 @@ export async function POST(request: NextRequest) {
+ 
+   // Extract data center from API key (e.g., "....-us19" → "us19")
+   const dc = apiKey.split('-').pop()
++  const listId = process.env.MAILCHIMP_LIST_ID || DEFAULT_MAILCHIMP_LIST_ID
+   const subscriberHash = createHash('md5')
+     .update(email.toLowerCase())
+     .digest('hex')
+ 
+   // Use PUT for add-or-update (idempotent — no error if already subscribed)
+-  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${MAILCHIMP_LIST_ID}/members/${subscriberHash}`
++  const url = `https://${dc}.api.mailchimp.com/3.0/lists/${listId}/members/${subscriberHash}`
+ 
+   try {
+     const response = await fetch(url, {
+@@ -56,14 +68,25 @@ export async function POST(request: NextRequest) {
+       }),
+     })
+ 
+-    const data = await response.json()
+-
+     if (!response.ok) {
+-      // Mailchimp's detail can reveal a member's status, so keep it server-side
+-      console.error('Mailchimp subscribe failed:', response.status, data.title, data.detail)
++      // Mailchimp can return 429/403 without JSON. Avoid parsing or logging
++      // the response body, which may also contain subscriber information.
++      console.error('Mailchimp subscribe failed:', response.status)
++      if (response.status === 429) {
++        return NextResponse.json(
++          { error: 'Newsletter subscription is temporarily unavailable. Please try again later.' },
++          { status: 503 },
++        )
++      }
++      if (response.status === 401 || response.status === 403 || response.status >= 500) {
++        return NextResponse.json(
++          { error: 'Newsletter subscription is temporarily unavailable. Please try again later.' },
++          { status: 502 },
++        )
++      }
+       return NextResponse.json(
+         { error: "We couldn't subscribe that address. Please check it and try again." },
+-        { status: response.status >= 500 ? 502 : 400 },
++        { status: 400 },
+       )
+     }
+ 
+diff --git a/eslint.config.mjs b/eslint.config.mjs
+index 05e726d..dc3b627 100644
+--- a/eslint.config.mjs
++++ b/eslint.config.mjs
+@@ -9,6 +9,7 @@ const eslintConfig = defineConfig([
+   globalIgnores([
+     // Default ignores of eslint-config-next:
+     ".next/**",
++    ".netlify/**",
+     "out/**",
+     "build/**",
+     "next-env.d.ts",

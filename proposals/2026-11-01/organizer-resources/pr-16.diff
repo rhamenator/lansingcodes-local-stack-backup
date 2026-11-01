@@ -1,0 +1,13 @@
+diff --git a/README.md b/README.md
+index 9585c13..d292490 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,7 @@ This repo is meant to be a collection of tools to aid event organizers with faci
+ - [Random Picker](https://www.randompicker.com/) - for raffles/giveaways
+ - [OBS: Open Broadcaster Software](https://obsproject.com/) - free and open source software for video recording and live streamin
+ - [Mentimeter](https://www.mentimeter.com/) - interactive polls, q&a, feedback
+-- Google timer - for sharing if there's a break or something
++- [Google timer](https://www.google.com/search?q=5+minute+timer) - search for a timer, set the break length, press **Start**, and share the timer tab or screen so attendees can see when the break ends. Keep the tab open while it runs.
+ 
+ ## Music
+ - [Spotify Lo-Fi playlist](https://open.spotify.com/playlist/4kAqBBEZQsBIXMIJl6u8tO?si=BmLnIyCHRWicfz_T_UWQnQ) - for waiting/background music

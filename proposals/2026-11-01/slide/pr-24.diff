@@ -1,0 +1,119 @@
+diff --git a/README.md b/README.md
+index fe97433..df2461f 100644
+--- a/README.md
++++ b/README.md
+@@ -14,6 +14,24 @@ to produce the deployable static site in `dist/`; `npm run preview` serves that
+ build for local review. Bootstrap CSS is bundled locally. The event, speaker,
+ and sponsor fields are still placeholders for the planned generator feature.
+ 
++## Link to a specific slide
++
++Pass `meeting`, `speaker`, and `topic` as URL query parameters to fill the
++slide headings. For example:
++
++```text
++https://slide.lansing.codes/?meeting=Lansing%20JavaScript&speaker=Alex%20Smith&topic=Testing%20web%20apps
++```
++
++Leave a parameter out to keep that heading's placeholder. URL values are shown
++as plain text and limited to 120 characters per heading. A bare group hash
++(such as `#javascript`) and automatic Meetup lookups are not implemented yet.
++This link format lets organizers prepare a slide while those integrations are
++built.
++
++Run `npm test` for URL parsing checks, then `npm run build` and `npm run preview`
++to inspect the built slide locally.
++
+ ## Code of Conduct
+ 
+ All participants are expected to treat others with respect and follow our
+diff --git a/main.css b/main.css
+index 985142e..4102432 100644
+--- a/main.css
++++ b/main.css
+@@ -29,3 +29,7 @@
+         max-width: 12rem;
+     }
+ }
++#main-text h1,
++#main-text h2 {
++    overflow-wrap: anywhere;
++}
+diff --git a/main.js b/main.js
+index 4c5294e..4f38855 100644
+--- a/main.js
++++ b/main.js
+@@ -1,2 +1,8 @@
+ import 'bootstrap/dist/css/bootstrap.min.css';
+ import './main.css';
++import { slideDetailsFromUrl } from './slide-content.mjs';
++
++const details = slideDetailsFromUrl(window.location.href);
++for (const [field, id] of Object.entries({ meeting: 'meetup', speaker: 'speaker', topic: 'topic' })) {
++  if (details[field]) document.getElementById(id).textContent = details[field];
++}
+diff --git a/package.json b/package.json
+index 95ced1c..5462291 100644
+--- a/package.json
++++ b/package.json
+@@ -11,7 +11,8 @@
+   "scripts": {
+     "start": "vite --host 127.0.0.1",
+     "build": "vite build",
+-    "preview": "vite preview --host 127.0.0.1"
++    "preview": "vite preview --host 127.0.0.1",
++    "test": "node --test"
+   },
+   "repository": {
+     "type": "git",
+diff --git a/slide-content.mjs b/slide-content.mjs
+new file mode 100644
+index 0000000..4052e0a
+--- /dev/null
++++ b/slide-content.mjs
+@@ -0,0 +1,15 @@
++const maxFieldLength = 120;
++
++export function slideDetailsFromUrl(url) {
++  const params = new URL(url).searchParams;
++  const get = (field) => {
++    const value = params.get(field)?.replace(/\s+/g, ' ').trim();
++    return value ? Array.from(value).slice(0, maxFieldLength).join('') : undefined;
++  };
++
++  return {
++    meeting: get('meeting'),
++    speaker: get('speaker'),
++    topic: get('topic')
++  };
++}
+diff --git a/test/slide-content.test.mjs b/test/slide-content.test.mjs
+new file mode 100644
+index 0000000..3cf6c0b
+--- /dev/null
++++ b/test/slide-content.test.mjs
+@@ -0,0 +1,24 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { slideDetailsFromUrl } from '../slide-content.mjs';
++
++test('reads and normalizes meeting details from the URL', () => {
++  assert.deepEqual(
++    slideDetailsFromUrl('https://slide.lansing.codes/?meeting=Lansing%20JavaScript&speaker=Alex%20Smith&topic=Web%20%20testing'),
++    { meeting: 'Lansing JavaScript', speaker: 'Alex Smith', topic: 'Web testing' }
++  );
++});
++
++test('leaves placeholders available when details are absent or blank', () => {
++  assert.deepEqual(
++    slideDetailsFromUrl('https://slide.lansing.codes/?meeting=%20%20#javascript'),
++    { meeting: undefined, speaker: undefined, topic: undefined }
++  );
++});
++
++test('keeps untrusted text as text and limits a long heading', () => {
++  assert.deepEqual(
++    slideDetailsFromUrl(`https://slide.lansing.codes/?meeting=${encodeURIComponent('<img src=x onerror=alert(1)>')}&topic=${'x'.repeat(150)}`),
++    { meeting: '<img src=x onerror=alert(1)>', speaker: undefined, topic: 'x'.repeat(120) }
++  );
++});

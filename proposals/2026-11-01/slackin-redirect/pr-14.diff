@@ -1,0 +1,104 @@
+diff --git a/.github/CONTRIBUTING.md b/.github/CONTRIBUTING.md
+new file mode 100644
+index 0000000..11f9fc2
+--- /dev/null
++++ b/.github/CONTRIBUTING.md
+@@ -0,0 +1,85 @@
++# Lansing Codes Slack Invite Redirect Contributing Guide
++
++Thanks for helping people find the Lansing Codes Slack community. Please read
++our [Code of Conduct](https://www.lansing.codes/code-of-conduct/) before
++contributing.
++
++## Contents
++
++- [Code of Conduct](#code-of-conduct)
++- [Issue Reporting Guidelines](#issue-reporting-guidelines)
++- [Pull Request Guidelines](#pull-request-guidelines)
++- [Development Setup](#development-setup)
++- [Testing Locally](#testing-locally)
++- [Deployments](#deployments)
++
++## Code of Conduct
++
++The [Lansing Codes Code of Conduct](https://www.lansing.codes/code-of-conduct/)
++applies to issues, pull requests, and community discussions.
++
++## Issue Reporting Guidelines
++
++Check [open issues](https://github.com/lansingcodes/slackin-redirect/issues)
++before filing a new one. For a broken redirect, include the URL you visited,
++the response status and destination you observed, your browser, and the time of
++the test. Do not paste private invite links or account credentials into issues.
++For a feature request, explain the visitor problem and the expected behavior.
++
++## Pull Request Guidelines
++
++1. Discuss significant behavior changes in an issue before implementing them.
++2. Create a branch from `main` in your fork and keep the change focused.
++3. Update both `_redirects` and the fallback references in `index.html` when
++   changing the Slack invite. Keep the destinations identical.
++4. Describe what changed, link the issue, and include the exact local checks
++   and results in your pull request.
++5. Request maintainer review. A maintainer decides when to merge into `main`.
++
++If your change depends on another pull request, name that dependency and use
++the dependency branch as your base until it is merged. Do not include API keys,
++Slack tokens, or other secrets in a commit.
++
++## Development Setup
++
++You need [Git](https://git-scm.com/downloads), a text editor, and a browser.
++[Node.js and npm](https://nodejs.org/) are needed for the `live-server` command
++below; this repository has no application dependencies or build step. An editor
++with HTML highlighting, such as [VS Code](https://code.visualstudio.com/), is
++helpful.
++
++Fork [this repository](https://github.com/lansingcodes/slackin-redirect),
++then clone your fork and create a branch:
++
++```sh
++git clone https://github.com/YOUR-USERNAME/slackin-redirect.git
++cd slackin-redirect
++git switch -c fix/describe-your-change
++```
++
++## Testing Locally
++
++From the repository root, start a static preview:
++
++```sh
++npx --yes live-server --no-browser --port=8080
++```
++
++Visit `http://127.0.0.1:8080/` in a browser. The HTML fallback should send you
++to the same Slack invite as its clickable link. Stop the server with Ctrl+C.
++`live-server` serves static files and does not apply Netlify's `_redirects`
++rule. Check the rule separately by comparing its destination to both URLs in
++`index.html`. For redirect behavior, use a Netlify deploy preview when one is
++available and check that `/` returns HTTP 302 with the expected `Location`.
++
++If you are changing only documentation, check that Markdown links and commands
++point to files and tools that exist. No unit test suite is configured for this
++static repository.
++
++## Deployments
++
++Submit a pull request to `main`. After review and merge, Netlify's Git
++integration deploys the `main` branch to the site behind `slack.lansing.codes`.
++Review the Netlify deployment result and verify the live redirect before
++considering the change complete. Contributors should not push directly to
++`main` or change production Netlify settings without a maintainer's direction.
+diff --git a/README.md b/README.md
+index 7cd4900..71d8b76 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,8 @@
+ # Slack Inviter Redirect
+ 
++See the [Contributing Guide](.github/CONTRIBUTING.md) for issue and pull request
++guidelines, local preview steps, and deployment details.
++
+ [![Netlify Status](https://api.netlify.com/api/v1/badges/29f7a1d9-c50f-42c7-a944-9524934bcd87/deploy-status)](https://app.netlify.com/sites/lansingcodes-slackin-redirect/deploys)
+ 
+ Redirects traffic from slack.lansing.codes to our shared invite link. An admin can manage that link at [Slack shared invites](https://lansingcodes.slack.com/admin/shared_invites). If the invite changes, update both `_redirects` and the fallback link in `index.html`.

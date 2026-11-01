@@ -1,0 +1,7 @@
+diff --git a/.npmrc b/.npmrc
+deleted file mode 100644
+index 521a9f7..0000000
+--- a/.npmrc
++++ /dev/null
+@@ -1 +0,0 @@
+-legacy-peer-deps=true

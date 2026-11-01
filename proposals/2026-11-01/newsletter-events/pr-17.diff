@@ -1,0 +1,310 @@
+diff --git a/README.md b/README.md
+index 617aa46..65a6823 100644
+--- a/README.md
++++ b/README.md
+@@ -13,6 +13,18 @@ and run `npm ci && npm test` to check the month query, Firestore response
+ parsing, and safe event link rendering. `vendor/moment.min.js` is the local
+ Moment 2.31.0 browser build, with its license alongside it.
+ 
++## Prepare a branded newsletter
++
++Open the page and check the current and next month event lists against the
++Meetup links. The branded email preview uses those same event records and date
++format. **Copy formatted email** copies HTML and a plain-text alternative;
++**Download HTML** saves the complete HTML for Mailchimp's custom-code editor.
++Send a Mailchimp test email to yourself and check its layout, links, and
++unsubscribe footer before sending a campaign. The footer contains Mailchimp
++merge tags that Mailchimp replaces when it sends the email. The page reads
++public Lansing Codes Firestore data and does not update a mailing list or send
++email itself.
++
+ ## Code of Conduct
+ 
+ All participants are expected to treat others with respect and follow our
+diff --git a/email-template.js b/email-template.js
+new file mode 100644
+index 0000000..cd1be31
+--- /dev/null
++++ b/email-template.js
+@@ -0,0 +1,63 @@
++const htmlEscape = value => String(value).replace(/[&<>"']/g, character => ({
++  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
++})[character])
++
++function eventUrl (value) {
++  try {
++    const url = new URL(value)
++    return ['http:', 'https:'].includes(url.protocol) ? url.href : null
++  } catch {
++    return null
++  }
++}
++
++function eventRow ({ event, when }) {
++  const name = htmlEscape(event.name || 'Unnamed event')
++  const url = eventUrl(event.url)
++  const title = url
++    ? `<a href="${htmlEscape(url)}" style="color:#075a9c;text-decoration:underline;font-weight:700">${name}</a>`
++    : `<strong style="color:#18334d">${name}</strong>`
++
++  return `<tr><td style="padding:0 28px 16px">
++    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#f1f7fc;border-left:4px solid #23a7bd">
++      <tr><td style="padding:16px 18px;font:16px/1.5 Arial,Helvetica,sans-serif;color:#18334d">
++        <span style="display:block;color:#41627b;font-size:13px;font-weight:700">${htmlEscape(when)}</span>
++        ${title}
++      </td></tr>
++    </table>
++  </td></tr>`
++}
++
++function monthRows ({ title, events }) {
++  const rows = events.length
++    ? events.map(eventRow).join('')
++    : '<tr><td style="padding:0 28px 16px;font:15px/1.5 Arial,Helvetica,sans-serif;color:#41627b">No events are currently scheduled.</td></tr>'
++  return `<tr><td style="padding:18px 28px 14px;font:700 22px/1.3 Arial,Helvetica,sans-serif;color:#123b5d">${htmlEscape(title)}</td></tr>${rows}`
++}
++
++export function buildNewsletterEmail (months) {
++  const sections = months.map(monthRows).join('')
++  const html = `<!doctype html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lansing Codes events</title></head>
++<body style="margin:0;padding:0;background:#eaf0f5;color:#18334d">
++<span style="display:none!important;font-size:1px;line-height:1px;color:#eaf0f5;max-height:0;max-width:0;opacity:0;overflow:hidden">Meet, learn, and build with Lansing Codes.</span>
++<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#eaf0f5"><tr><td align="center" style="padding:24px 12px">
++  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:600px;background:#ffffff">
++    <tr><td style="padding:28px;background:#0b507f;color:#ffffff;font:700 30px/1.2 Arial,Helvetica,sans-serif">Lansing Codes</td></tr>
++    <tr><td style="padding:24px 28px 4px;font:16px/1.6 Arial,Helvetica,sans-serif;color:#18334d">Find your next chance to connect, learn, and build with the Lansing tech community.</td></tr>
++    ${sections}
++    <tr><td style="padding:18px 28px;background:#eaf0f5;font:13px/1.6 Arial,Helvetica,sans-serif;color:#41627b">Lansing Codes · Lansing, Michigan<br><a href="https://www.lansing.codes/" style="color:#075a9c">Visit the website</a> · <a href="*|UNSUB|*" style="color:#075a9c">Unsubscribe</a><br>*|LIST:ADDRESS|*</td></tr>
++  </table>
++</td></tr></table>
++</body></html>`
++
++  const text = ['Lansing Codes — upcoming events', '',
++    ...months.flatMap(month => [month.title, ...(
++      month.events.length
++        ? month.events.flatMap(({ event, when }) => [`${when} — ${event.name || 'Unnamed event'}`, ...(eventUrl(event.url) ? [eventUrl(event.url)] : [])])
++        : ['No events are currently scheduled.']
++    ), '']),
++    'https://www.lansing.codes/', 'Unsubscribe: *|UNSUB|*'].join('\n')
++
++  return { html, text }
++}
+diff --git a/index.html b/index.html
+index 6bc0c2d..abc7add 100644
+--- a/index.html
++++ b/index.html
+@@ -28,6 +28,15 @@ <h2><span id="current-month-name"></span> Events</h2>
+     <ul id="current-month-event-list"></ul>
+   </section>
+ 
++  <section aria-labelledby="email-preview-heading">
++    <h2 id="email-preview-heading">Branded email preview</h2>
++    <p>Ready-to-paste HTML for Mailchimp, with inline styling and a plain-text alternative.</p>
++    <button id="copy-email" type="button" disabled>Copy formatted email</button>
++    <button id="download-email" type="button" disabled>Download HTML</button>
++    <p id="email-status" role="status">Loading events for the email preview…</p>
++    <iframe id="email-preview" title="Branded newsletter email preview" sandbox="" style="display:block;width:100%;max-width:660px;height:700px;border:1px solid #a9bac8;background:#fff"></iframe>
++  </section>
++
+   <script src="./vendor/moment.min.js"></script>
+   <script src="./vendor/moment-timezone.min.js"></script>
+   <script src="./vendor/moment-timezone-detroit.js"></script>
+diff --git a/index.js b/index.js
+index 727d9c6..bae157b 100644
+--- a/index.js
++++ b/index.js
+@@ -1,9 +1,37 @@
+ import { fetchEvents } from './events.js'
+ import { appendEvent } from './render.js'
++import { buildNewsletterEmail } from './email-template.js'
+ 
+ const moment = window.moment
+ const LANSING_TIME_ZONE = 'America/Detroit'
+ const latestLoadByList = new Map()
++const emailMonths = new Map()
++let emailContent = null
++
++function refreshEmailPreview () {
++  const status = document.getElementById('email-status')
++  const copy = document.getElementById('copy-email')
++  const download = document.getElementById('download-email')
++  const months = ['current-month-event-list', 'next-month-event-list']
++    .map(id => emailMonths.get(id))
++
++  if (months.some(month => month?.status === 'error')) {
++    status.textContent = 'The email preview is unavailable because events could not be loaded.'
++  } else if (months.some(month => month?.status !== 'ready')) {
++    status.textContent = 'Loading events for the email preview…'
++  } else {
++    emailContent = buildNewsletterEmail(months)
++    document.getElementById('email-preview').srcdoc = emailContent.html
++    copy.disabled = false
++    download.disabled = false
++    status.textContent = 'Email preview ready. Copy it into Mailchimp or download the HTML.'
++    return
++  }
++  emailContent = null
++  document.getElementById('email-preview').srcdoc = ''
++  copy.disabled = true
++  download.disabled = true
++}
+ 
+ async function compileEventList(monthMoment, nameId, listId) {
+   const loadId = (latestLoadByList.get(listId) || 0) + 1
+@@ -17,19 +45,27 @@ async function compileEventList(monthMoment, nameId, listId) {
+ 
+   const eventListEl = document.getElementById(listId)
+   eventListEl.replaceChildren()
++  emailMonths.set(listId, { status: 'loading' })
++  refreshEmailPreview()
+ 
+   try {
+     const events = await fetchEvents(firstOfMonth.valueOf(), endOfMonth.valueOf())
+     if (latestLoadByList.get(listId) !== loadId) return
++    const emailEvents = []
+     for (const event of events) {
+       const when = moment.tz(event.startTime, LANSING_TIME_ZONE).format(dateFormat).replace(':00', '')
+       appendEvent(eventListEl, event, when)
++      emailEvents.push({ event, when })
+     }
++    emailMonths.set(listId, { status: 'ready', title: firstOfMonth.format('MMMM YYYY'), events: emailEvents })
++    refreshEmailPreview()
+   } catch (error) {
+     if (latestLoadByList.get(listId) !== loadId) return
+     const message = document.createElement('li')
+     message.textContent = 'Events could not be loaded. Please try again.'
+     eventListEl.append(message)
++    emailMonths.set(listId, { status: 'error' })
++    refreshEmailPreview()
+     console.error('Failed to load newsletter events:', error)
+   }
+ }
+@@ -40,4 +76,25 @@ function refreshEventLists() {
+ }
+ 
+ document.getElementById('refresh-format').addEventListener('click', refreshEventLists)
++document.getElementById('copy-email').addEventListener('click', async () => {
++  if (!emailContent) return
++  try {
++    await navigator.clipboard.write([new ClipboardItem({
++      'text/html': new Blob([emailContent.html], { type: 'text/html' }),
++      'text/plain': new Blob([emailContent.text], { type: 'text/plain' }),
++    })])
++    document.getElementById('email-status').textContent = 'Formatted email copied.'
++  } catch {
++    document.getElementById('email-status').textContent = 'Clipboard access failed. Use Download HTML instead.'
++  }
++})
++document.getElementById('download-email').addEventListener('click', () => {
++  if (!emailContent) return
++  const url = URL.createObjectURL(new Blob([emailContent.html], { type: 'text/html;charset=utf-8' }))
++  const link = document.createElement('a')
++  link.href = url
++  link.download = 'lansing-codes-newsletter.html'
++  link.click()
++  setTimeout(() => URL.revokeObjectURL(url), 60000)
++})
+ refreshEventLists()
+diff --git a/test/email-template.test.js b/test/email-template.test.js
+new file mode 100644
+index 0000000..fd95029
+--- /dev/null
++++ b/test/email-template.test.js
+@@ -0,0 +1,29 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { JSDOM } from 'jsdom'
++import { buildNewsletterEmail } from '../email-template.js'
++
++test('builds a table-based email with safe links and Mailchimp footer tags', () => {
++  const { html, text } = buildNewsletterEmail([
++    { title: 'October 2026', events: [{ event: {
++      name: '<img src=x onerror=alert(1)>',
++      url: 'javascript:alert(1)',
++    }, when: '30th (Fri) 7pm' }] },
++    { title: 'November 2026', events: [{ event: {
++      name: 'DevOps & Friends',
++      url: 'https://example.org/event?one=1&two=2',
++    }, when: '10th (Tue) 6pm' }] },
++  ])
++  const doc = new JSDOM(html).window.document
++
++  assert.equal(doc.querySelector('img'), null)
++  assert.equal(doc.querySelector('a[href^="javascript:"]'), null)
++  assert.equal(doc.querySelectorAll('table[role="presentation"]').length >= 3, true)
++  assert.match(doc.body.textContent, /<img src=x onerror=alert\(1\)>/)
++  assert.match(doc.body.textContent, /DevOps & Friends/)
++  assert.equal(doc.querySelector('a[href^="https://example.org/"]').href, 'https://example.org/event?one=1&two=2')
++  assert.match(html, /\*\|UNSUB\|\*/)
++  assert.match(html, /\*\|LIST:ADDRESS\|\*/)
++  assert.match(text, /DevOps & Friends/)
++  assert.doesNotMatch(text, /javascript:alert/)
++})
+diff --git a/test/refresh.test.js b/test/refresh.test.js
+index b796ce8..5fac1e2 100644
+--- a/test/refresh.test.js
++++ b/test/refresh.test.js
+@@ -33,11 +33,15 @@ test('older event loads cannot append stale dates or errors after a refresh', as
+     pending[2].resolve(response())
+     pending[3].resolve(response())
+     await new Promise((resolve) => setImmediate(resolve))
++    assert.equal(document.getElementById('copy-email').disabled, false)
++    assert.match(document.getElementById('email-preview').srcdoc, /NEW/)
+ 
+     // The startup loads finish late: one succeeds and one fails.
+     pending[0].reject(new Error('stale request failed'))
+     pending[1].resolve(response())
+     await new Promise((resolve) => setImmediate(resolve))
++    assert.equal(document.getElementById('copy-email').disabled, false)
++    assert.match(document.getElementById('email-preview').srcdoc, /NEW/)
+ 
+     for (const id of ['next-month-event-list', 'current-month-event-list']) {
+       const list = document.getElementById(id)
+@@ -45,6 +49,31 @@ test('older event loads cannot append stale dates or errors after a refresh', as
+       assert.match(list.textContent, /^NEW .*Race test$/)
+       assert.doesNotMatch(list.textContent, /could not be loaded/)
+     }
++
++    const previousCreate = URL.createObjectURL
++    const previousRevoke = URL.revokeObjectURL
++    const previousClick = dom.window.HTMLAnchorElement.prototype.click
++    const previousTimeout = globalThis.setTimeout
++    let downloaded
++    let blob
++    try {
++      URL.createObjectURL = value => { blob = value; return 'blob:test-newsletter' }
++      URL.revokeObjectURL = () => {}
++      dom.window.HTMLAnchorElement.prototype.click = function () { downloaded = { href: this.href, name: this.download } }
++      globalThis.setTimeout = (callback, delay) => {
++        assert.equal(delay, 60000)
++        callback()
++      }
++      document.getElementById('download-email').click()
++      assert.deepEqual(downloaded, { href: 'blob:test-newsletter', name: 'lansing-codes-newsletter.html' })
++      assert.match(await blob.text(), /Race test/)
++      assert.match(blob.type, /^text\/html/)
++    } finally {
++      URL.createObjectURL = previousCreate
++      URL.revokeObjectURL = previousRevoke
++      dom.window.HTMLAnchorElement.prototype.click = previousClick
++      globalThis.setTimeout = previousTimeout
++    }
+   } finally {
+     globalThis.window = previous.window
+     globalThis.document = previous.document
+diff --git a/test/timezone.test.js b/test/timezone.test.js
+index 98137e5..2fd4405 100644
+--- a/test/timezone.test.js
++++ b/test/timezone.test.js
+@@ -50,6 +50,10 @@ test('Lansing month query and displayed times are stable outside Eastern time',
+     const list = document.getElementById('current-month-event-list').textContent
+     assert.match(list, /1st \(Mon\) 12:30 am.*Month boundary/)
+     assert.match(list, /14th \(Sun\) 3:30 am.*DST change/)
++    const email = document.getElementById('email-preview').srcdoc
++    assert.match(email, /March 2027/)
++    assert.match(email, /1st \(Mon\) 12:30 am/)
++    assert.match(email, /14th \(Sun\) 3:30 am/)
+   } finally {
+     globalThis.window = previous.window
+     globalThis.document = previous.document

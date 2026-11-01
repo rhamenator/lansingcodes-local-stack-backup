@@ -1,0 +1,11 @@
+diff --git a/index.html b/index.html
+index c75acf6..3e1f520 100644
+--- a/index.html
++++ b/index.html
+@@ -1,5 +1,5 @@
+ <!DOCTYPE html>
+-<html>
++<html lang="en-US">
+   <head>
+     <title>Redirecting</title>
+     <meta

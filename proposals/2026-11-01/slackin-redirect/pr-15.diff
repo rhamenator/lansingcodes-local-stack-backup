@@ -1,0 +1,66 @@
+diff --git a/.github/ISSUE_TEMPLATE/bug_report.md b/.github/ISSUE_TEMPLATE/bug_report.md
+new file mode 100644
+index 0000000..257d622
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/bug_report.md
+@@ -0,0 +1,34 @@
++---
++name: Bug report
++about: Create a report to help us improve
++title: ''
++labels: bug
++assignees: ''
++
++---
++
++**Describe the bug**
++A clear and concise description of what the bug is.
++
++**To Reproduce**
++Steps to reproduce the behavior:
++1. Go to '...'
++2. Click on '....'
++3. Scroll down to '....'
++4. See error
++
++**Expected behavior**
++A clear and concise description of what you expected to happen.
++
++**Screenshots**
++If applicable, add screenshots to help explain your problem.
++
++**Environment (please complete the following information):**
++ - Device: [e.g. iPhone 8 Plus, MacBook Pro]
++ - OS: [e.g. iOS]
++ - Browser [e.g. chrome, firefox, safari]
++ - Version [e.g. 22]
++ - Resolution: [e.g. 1600x1200]
++
++**Additional context**
++Add any other context about the problem here.
+diff --git a/.github/ISSUE_TEMPLATE/feature_request.md b/.github/ISSUE_TEMPLATE/feature_request.md
+new file mode 100644
+index 0000000..11fc491
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/feature_request.md
+@@ -0,0 +1,20 @@
++---
++name: Feature request
++about: Suggest an idea for this project
++title: ''
++labels: enhancement
++assignees: ''
++
++---
++
++**Is your feature request related to a problem? Please describe.**
++A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
++
++**Describe the solution you'd like**
++A clear and concise description of what you want to happen.
++
++**Describe alternatives you've considered**
++A clear and concise description of any alternative solutions or features you've considered.
++
++**Additional context**
++Add any other context or screenshots about the feature request here.

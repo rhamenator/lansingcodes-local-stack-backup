@@ -1,0 +1,156 @@
+diff --git a/.circleci/config.yml b/.circleci/config.yml
+index 052e1bc..c1b8a0b 100644
+--- a/.circleci/config.yml
++++ b/.circleci/config.yml
+@@ -1,6 +1,4 @@
+ version: 2.1
+-orbs:
+-  heroku: circleci/heroku@0.0.8
+ jobs:
+   build:
+     docker:
+@@ -26,13 +24,6 @@ jobs:
+           paths:
+             - ./node_modules
+ workflows:
+-  test-and-deploy:
++  transition-build:
+     jobs:
+       - build
+-      - heroku/deploy-via-git:
+-          requires:
+-            - build
+-          filters:
+-            branches:
+-              only: main
+-
+diff --git a/.github/workflows/build-and-deploy.yml b/.github/workflows/build-and-deploy.yml
+new file mode 100644
+index 0000000..243932b
+--- /dev/null
++++ b/.github/workflows/build-and-deploy.yml
+@@ -0,0 +1,53 @@
++name: Build and deploy
++
++on:
++  push:
++  pull_request:
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  build:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 20
++    env:
++      TZ: America/Detroit
++    steps:
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
++        with:
++          persist-credentials: false
++      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
++        with:
++          node-version-file: .nvmrc
++          cache: npm
++      - run: npm ci
++      - run: npm rebuild
++      - run: npm run lint
++      - run: npm test
++      - run: npm run test:legacy
++      - run: npm audit --audit-level=low
++
++  deploy:
++    needs: build
++    if: >-
++      github.repository == 'lansingcodes/slackbot' &&
++      github.event_name == 'push' &&
++      github.ref == 'refs/heads/main' &&
++      vars.HEROKU_DEPLOY_ENABLED == 'true'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 30
++    environment: production
++    concurrency:
++      group: slackbot-production
++      cancel-in-progress: false
++    steps:
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
++        with:
++          persist-credentials: false
++      - name: Push tested commit to Heroku Git
++        env:
++          HEROKU_APP_NAME: ${{ vars.HEROKU_APP_NAME }}
++          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
++        run: bash scripts/deploy-heroku-git.sh
+diff --git a/docs/github-actions-migration.md b/docs/github-actions-migration.md
+new file mode 100644
+index 0000000..4431cf0
+--- /dev/null
++++ b/docs/github-actions-migration.md
+@@ -0,0 +1,41 @@
++# GitHub Actions migration
++
++The workflow in `.github/workflows/build-and-deploy.yml` runs on every push and
++pull request. It uses Node 24, installs and rebuilds dependencies, and runs lint,
++unit tests, legacy command checks, and the dependency audit. It needs no Slack,
++Firebase, X, or Heroku secret for those checks.
++
++`.circleci/config.yml` temporarily keeps the existing CircleCI **build** check
++because branch protection may require it. Its Heroku deploy job is removed so
++there is only one potential automatic deploy path. Retire the CircleCI check
++and delete this file in a follow-up after GitHub Actions is required.
++
++## Administrator setup before enabling production deployment
++
++1. Review the PR's GitHub Actions build result and this repository's branch
++   protection rules. Make the new `build` check required after it has run on
++   `main`.
++2. Create the GitHub Actions environment `production`. Restrict deployments to
++   `main` and add required reviewers if desired.
++3. In that environment, set variable `HEROKU_APP_NAME` to the **existing
++   production app's name** and secret `HEROKU_API_KEY` to a token from an account
++   authorized to deploy that app. Keep these values out of source and PR text.
++4. Confirm the Heroku app still has its production Slack, Firestore, and other
++   config vars. The workflow only deploys code; it does not create or change
++   those values or scale dynos.
++5. Set repository variable `HEROKU_DEPLOY_ENABLED` to `true` only when ready to
++   use GitHub Actions for deployment. Until that exact value is set, pushes to
++   `main` run tests but skip deployment. The old CircleCI deploy job has
++   already been removed by this PR.
++6. Merge a small, reviewed `main` change and confirm the deploy job publishes
++   that commit to the intended Heroku app. Check the release, process status,
++   logs, and Slack behavior. Then disable CircleCI integration and remove its
++   temporary build-only config in a follow-up.
++
++The deploy job requires a successful build, an exact `main` push in
++`lansingcodes/slackbot`, and the enable variable. PRs and fork events never get
++the Heroku credentials. The `production` environment can enforce an additional
++approval or branch restriction. The job pushes the checked-out commit to Heroku
++Git's `main` branch; Heroku Git is a deployment transport, so the push may need
++to replace its previous ref. The script writes the token into a temporary
++owner-only `.netrc` and removes it when the push finishes.
+diff --git a/scripts/deploy-heroku-git.sh b/scripts/deploy-heroku-git.sh
+new file mode 100644
+index 0000000..5d2c1cc
+--- /dev/null
++++ b/scripts/deploy-heroku-git.sh
+@@ -0,0 +1,18 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++: "${HEROKU_APP_NAME:?Set HEROKU_APP_NAME to the existing Heroku app name}"
++: "${HEROKU_API_KEY:?Set HEROKU_API_KEY to a Heroku API token}"
++
++if [[ ! "$HEROKU_APP_NAME" =~ ^[a-z][a-z0-9-]{1,28}[a-z0-9]$ ]]; then
++  echo 'HEROKU_APP_NAME is not a valid Heroku app name.' >&2
++  exit 1
++fi
++
++credentials_dir="$(mktemp -d)"
++trap 'rm -rf "$credentials_dir"' EXIT
++umask 077
++printf 'machine git.heroku.com\n  login _\n  password %s\n' "$HEROKU_API_KEY" > "$credentials_dir/.netrc"
++
++HOME="$credentials_dir" GIT_TERMINAL_PROMPT=0 git push --force \
++  "https://git.heroku.com/${HEROKU_APP_NAME}.git" HEAD:main

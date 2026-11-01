@@ -1,0 +1,236 @@
+diff --git a/.circleci/config.yml b/.circleci/config.yml
+index 7f92592..8b33578 100644
+--- a/.circleci/config.yml
++++ b/.circleci/config.yml
+@@ -18,7 +18,12 @@ jobs:
+           command: |
+             npm install
+             npm rebuild
+-            npm test
++            if npm test > /tmp/slackbot-jasmine.log 2>&1; then
++              cat /tmp/slackbot-jasmine.log
++            else
++              cat /tmp/slackbot-jasmine.log
++              exit 1
++            fi
+       - save_cache:
+           key: v1-dep-{{ .Branch }}-{{ checksum "package-lock.json" }}
+           paths:
+diff --git a/README.md b/README.md
+index d70a68c..514b242 100644
+--- a/README.md
++++ b/README.md
+@@ -31,6 +31,16 @@ pull requests or forking our code to make your own community website!
+ Before you get ahead of yourself, though, please read our
+ [Contributing Guide](https://github.com/lansingcodes/slackbot/blob/main/.github/CONTRIBUTING.md).
+ 
++## Troubleshooting access
++
++Before deploying this change, an administrator must set `TROUBLESHOOTER_USER_IDS`
++to the comma-separated Slack user IDs allowed to inspect or change notification
++history (for example, `UADMIN123,UOTHER123`). The bot's `identify me` command
++returns the caller's Slack user ID. Display names are not used for authorization.
++If this setting is absent or contains no valid IDs, the privileged commands deny
++all callers. Check the allowlist in a test workspace before deploying so current
++troubleshooters keep their access.
++
+ ## License
+ 
+ [Hippocratic 2.1](https://firstdonoharm.dev)
+diff --git a/lib/initializers/troubleshooter.js b/lib/initializers/troubleshooter.js
+index 8aaf722..14b6b8b 100644
+--- a/lib/initializers/troubleshooter.js
++++ b/lib/initializers/troubleshooter.js
+@@ -6,14 +6,14 @@
+ //   "moment"
+ //
+ // Configuration:
+-//   N/A
++//   TROUBLESHOOTER_USER_IDS - Comma-separated Slack user IDs allowed to inspect or change notification state.
+ //
+ // Commands:
+-//   hubot identify me - Print the current user's name.
+-//   hubot silently update notifications cache - Update the event notifications cache. For 'erik.gillespie' only.
++//   hubot identify me - Reply with the current user's Slack ID.
++//   hubot silently update notifications cache - Update the event notifications cache. For configured users only.
+ //   hubot inspect upcoming events - Print the table of upcoming events.
+-//   hubot inspect notifications cache - Print the event notifications cache. For 'erik.gillespie' only.
+-//   hubot clear notifications cache - Clear the event notifications cache. For 'erik.gillespie' only.
++//   hubot inspect notifications cache - Print the event notifications cache. For configured users only.
++//   hubot clear notifications cache - Clear the event notifications cache. For configured users only.
+ //
+ // Notes:
+ //   N/A
+@@ -25,17 +25,24 @@ const getEventsFetcher = require('../fetchers/events-fetcher')
+ const getEventsCacher = require('../cachers/events-cacher')
+ 
+ module.exports = robot => {
++  const authorizedIds = new Set((process.env.TROUBLESHOOTER_USER_IDS || '')
++    .split(',')
++    .map(id => id.trim())
++    .filter(id => /^[UW][A-Z0-9]+$/.test(id)))
++  const isAuthorized = message => Boolean(message.envelope.user.id) &&
++    authorizedIds.has(message.envelope.user.id)
++
+   robot.respond(/identify me/, message => {
+-    console.log(JSON.stringify(message.envelope.user))
+-    message.send('Just sent your user info to the server logs.')
++    message.send(`Your Slack user ID is ${message.envelope.user.id}.`)
+   })
+ 
+   robot.enter(message => {
+-    console.log(JSON.stringify(message.envelope.user))
++    const { id, room } = message.envelope.user
++    console.log(JSON.stringify({ id, room }))
+   })
+ 
+   robot.respond(/silently update notifications cache/, message => {
+-    if (message.envelope.user.name === 'erik.gillespie') {
++    if (isAuthorized(message)) {
+       message.send('Silently updating the notifications cache...')
+       const eventsCacher = getEventsCacher(robot)
+       getEventsFetcher(robot)
+@@ -47,7 +54,7 @@ module.exports = robot => {
+   })
+ 
+   robot.respond(/inspect upcoming events/, message => {
+-    if (message.envelope.user.name === 'erik.gillespie') {
++    if (isAuthorized(message)) {
+       message.send('Printing all upcoming events to the server logs...')
+       getEventsFetcher(robot)
+         .then(eventsFetcher => eventsFetcher.upcoming())
+@@ -58,14 +65,14 @@ module.exports = robot => {
+   })
+ 
+   robot.respond(/inspect notifications cache/, message => {
+-    if (message.envelope.user.name === 'erik.gillespie') {
++    if (isAuthorized(message)) {
+       console.log(JSON.stringify(getEventsCacher(robot).getAll()))
+       message.send('Just printed the cache to the server logs.')
+     }
+   })
+ 
+   robot.respond(/clear notifications cache/, message => {
+-    if (message.envelope.user.name === 'erik.gillespie') {
++    if (isAuthorized(message)) {
+       getEventsCacher(robot).clearAll()
+       message.send('Just cleared the notifications cache.')
+     }
+diff --git a/spec/lib/helpers/shorten-url-spec.js b/spec/lib/helpers/shorten-url-spec.js
+index 0897482..97b0060 100644
+--- a/spec/lib/helpers/shorten-url-spec.js
++++ b/spec/lib/helpers/shorten-url-spec.js
+@@ -1,9 +1,15 @@
++const TinyURL = require('tinyurl')
+ const shortenUrl = require('../../../lib/helpers/shorten-url')
+ 
+ describe('shorten-url', () => {
+-  it('produces a URL beginning with "https://tinyurl.com/"', (done) => {
+-    shortenUrl('http://www.google.com', (shortUrl) => {
+-      expect(shortUrl.startsWith('https://tinyurl.com/')).toBeTrue()
++  it('passes the URL and shortened result through to the callback', (done) => {
++    const longUrl = 'https://www.meetup.com/example/event/123'
++    const shortUrl = 'https://tinyurl.com/example'
++    const shorten = spyOn(TinyURL, 'shorten').and.callFake((url, callback) => callback(shortUrl))
++
++    shortenUrl(longUrl, (result) => {
++      expect(shorten).toHaveBeenCalledWith(longUrl, jasmine.any(Function))
++      expect(result).toBe(shortUrl)
+       done()
+     })
+   })
+diff --git a/spec/lib/initializers/troubleshooter-spec.js b/spec/lib/initializers/troubleshooter-spec.js
+new file mode 100644
+index 0000000..9bb274a
+--- /dev/null
++++ b/spec/lib/initializers/troubleshooter-spec.js
+@@ -0,0 +1,89 @@
++const proxyquire = require('proxyquire').noCallThru()
++
++describe('troubleshooter authorization', () => {
++  const originalIds = process.env.TROUBLESHOOTER_USER_IDS
++  let handlers
++  let cleared
++  let fetched
++  let onEnter
++
++  const initialize = () => {
++    handlers = []
++    cleared = 0
++    fetched = 0
++    const init = proxyquire('../../../lib/initializers/troubleshooter', {
++      '../cachers/events-cacher': () => ({
++        clearAll: () => { cleared++ },
++        getAll: () => [],
++        cache: () => {}
++      }),
++      '../fetchers/events-fetcher': () => {
++        fetched++
++        return Promise.resolve({ upcoming: () => Promise.resolve([]) })
++      }
++    })
++    init({
++      respond: (pattern, handler) => handlers.push([pattern, handler]),
++      enter: handler => { onEnter = handler }
++    })
++  }
++
++  const run = async (command, user) => {
++    const handler = handlers.find(([pattern]) => pattern.test(command))[1]
++    const send = jasmine.createSpy('send')
++    await handler({ envelope: { user }, send })
++    return send
++  }
++
++  afterEach(() => {
++    if (originalIds === undefined) delete process.env.TROUBLESHOOTER_USER_IDS
++    else process.env.TROUBLESHOOTER_USER_IDS = originalIds
++  })
++
++  it('rejects a matching legacy name when the Slack ID is not authorized', async () => {
++    process.env.TROUBLESHOOTER_USER_IDS = 'UADMIN123'
++    initialize()
++    const user = { id: 'UUNTRUSTED', name: 'erik.gillespie' }
++    for (const command of [
++      'silently update notifications cache',
++      'inspect upcoming events',
++      'inspect notifications cache',
++      'clear notifications cache'
++    ]) {
++      expect(await run(command, user)).not.toHaveBeenCalled()
++    }
++    expect(cleared).toBe(0)
++    expect(fetched).toBe(0)
++  })
++
++  it('allows a configured Slack ID regardless of display name', async () => {
++    process.env.TROUBLESHOOTER_USER_IDS = 'UOTHER123, UADMIN123'
++    initialize()
++    expect(await run('clear notifications cache', { id: 'UADMIN123', name: 'renamed' }))
++      .toHaveBeenCalledWith('Just cleared the notifications cache.')
++    expect(cleared).toBe(1)
++  })
++
++  it('fails closed when IDs are absent or malformed', async () => {
++    process.env.TROUBLESHOOTER_USER_IDS = 'not-a-slack-id'
++    initialize()
++    await run('clear notifications cache', { id: 'not-a-slack-id', name: 'erik.gillespie' })
++    expect(cleared).toBe(0)
++  })
++
++  it('returns only the caller ID for identify me', async () => {
++    delete process.env.TROUBLESHOOTER_USER_IDS
++    initialize()
++    const log = spyOn(console, 'log')
++    expect(await run('identify me', { id: 'UADMIN123', email: 'private@example.org' }))
++      .toHaveBeenCalledWith('Your Slack user ID is UADMIN123.')
++    expect(log).not.toHaveBeenCalled()
++  })
++
++  it('logs only a user ID and room on a join', () => {
++    initialize()
++    const log = spyOn(console, 'log')
++    onEnter({ envelope: { user: { id: 'UADMIN123', room: 'CROOM123', email: 'private@example.org' } } })
++    expect(log).toHaveBeenCalledWith('{"id":"UADMIN123","room":"CROOM123"}')
++  })
++})

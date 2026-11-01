@@ -1,0 +1,644 @@
+diff --git a/README.md b/README.md
+index 395a499..ddfb546 100644
+--- a/README.md
++++ b/README.md
+@@ -43,6 +43,12 @@ Set `ORGANIZER_BY_GROUP`, `ORGANIZER_FIRST_NAME_BY_GROUP`, `WELCOMER_BY_CHANNEL`
+ 
+ Run `npm test`, `npm run lint`, `npm run test:legacy`, and `npm audit --audit-level=low` before a PR. The unit and legacy smoke suites need no Slack or X credentials. The unit suite includes a full Hubot configuration check.
+ 
++The legacy command smoke suite covers the retained diagnostics, help, and rules
++JavaScript packages plus the local JavaScript replacements for bikeshed, darts,
++principles, and thank-you. The old CoffeeScript runtime and compatibility loader
++are no longer required. Attribution and license notices for the local replacements
++are in [docs/legacy-command-attribution.md](docs/legacy-command-attribution.md).
++
+ To rehearse the bot with the production website's Firestore SDK, check out `lansingcodes/website` beside this repository and run `npm ci` there. Install the Firebase CLI, then run `npm run test:stack`. Set `STACK_WEBSITE_PACKAGE` to the website's `package.json` if it is elsewhere, and `FIREBASE_BIN` if the CLI is not on `PATH`. The test uses only a local Firestore emulator and demo data. For end-to-end acceptance, test the bot in a separate Slack workspace with representative Firestore events before deploying to Heroku.
+ 
+ ### Required Slack scopes and events
+diff --git a/dev-tools/legacy-script-smoke.js b/dev-tools/legacy-script-smoke.js
+index 3094766..378330d 100644
+--- a/dev-tools/legacy-script-smoke.js
++++ b/dev-tools/legacy-script-smoke.js
+@@ -1,8 +1,6 @@
+ const { Robot, Adapter, TextMessage } = require('hubot')
+-const legacyScripts = require('../legacy-scripts.json')
+-const loadLegacyScripts = require('../lib/load-legacy-scripts')
+-
+-require('coffeescript/register')
++const assert = require('node:assert/strict')
++const loadSupportedPackages = require('../lib/load-supported-hubot-packages')
+ 
+ class LocalAdapter extends Adapter {
+   async send (envelope, ...strings) { this.emit('message', envelope, strings.join(' ')) }
+@@ -13,7 +11,9 @@ class LocalAdapter extends Adapter {
+ 
+ async function expectMessage (robot, command, pattern) {
+   const response = new Promise((resolve, reject) => {
++    const observed = []
+     const onMessage = (_envelope, text) => {
++      observed.push(text)
+       if (!pattern.test(text)) return
+       clearTimeout(timer)
+       robot.adapter.off('message', onMessage)
+@@ -21,14 +21,15 @@ async function expectMessage (robot, command, pattern) {
+     }
+     const timer = setTimeout(() => {
+       robot.adapter.off('message', onMessage)
+-      reject(new Error(`Timed out after: ${command}`))
++      reject(new Error(`Timed out after: ${command}; observed: ${observed.join(' | ').slice(0, 300)}`))
+     }, 5000)
+     robot.adapter.on('message', onMessage)
+   })
+   const user = robot.brain.userForId('ULOCAL', { name: 'local', room: 'CLOCAL' })
+   await robot.adapter.receive(new TextMessage(user, command))
+-  await response
++  const text = await response
+   console.log(`PASS: ${command}`)
++  return text
+ }
+ 
+ async function main () {
+@@ -37,7 +38,12 @@ async function main () {
+   const robot = new Robot('local-adapter', false, 'slackbot')
+   robot.adapter = new LocalAdapter(robot)
+   robot.setupNullRouter()
+-  await loadLegacyScripts(robot, legacyScripts)
++  await loadSupportedPackages(robot)
++  for (const name of ['legacy-bikeshed', 'legacy-darts', 'legacy-principles', 'legacy-thank-you']) {
++    const filepath = require.resolve(`../lib/initializers/${name}`)
++    require(filepath)(robot)
++    robot.parseHelp(filepath)
++  }
+   require('../lib/initializers/heroku-keepalive')(robot)
+   require('../lib/initializers/legacy-video-rooms')(robot)
+   require('../lib/initializers/legacy-maps')(robot)
+@@ -45,15 +51,33 @@ async function main () {
+   await robot.run()
+   try {
+     await expectMessage(robot, 'slackbot ping', /PONG/i)
++    await expectMessage(robot, 'slackbot adapter', /local-adapter/i)
+     await expectMessage(robot, 'slackbot echo local check', /local check/)
++    await expectMessage(robot, 'slackbot time', /Server time is:/)
+     await expectMessage(robot, 'slackbot the rules', /A robot (may not|must)/i)
++    await expectMessage(robot, 'slackbot the rules apple', /A developer (may not|must)/i)
+     await expectMessage(robot, 'slackbot thank you', /welcome|problem|pleasure|sure|bother|all right|nothing|not at all|mention it/i)
+     await expectMessage(robot, 'slackbot principle me', /./)
+-    await expectMessage(robot, 'What is bikeshedding?', /Parkinson.*Law of Triviality/i)
++    const allPrinciples = await expectMessage(robot, 'slackbot principle all', /You can not expect to have what you want/)
++    assert.equal(allPrinciples.split('\n').length, 42)
++    assert.match(allPrinciples, /Life’s song is filled with beauty/)
++    await expectMessage(robot, 'slackbot principle bomb', /You can not expect to have what you want/)
++    await expectMessage(robot, 'slackbot help', /Available commands:/i)
++    const originalFetch = globalThis.fetch
++    globalThis.fetch = async () => new Response(JSON.stringify({ hex: { value: '#123ABC', clean: '123ABC' } }), { status: 200 })
++    try {
++      await expectMessage(robot, 'What is bikeshedding?', /Parkinson.*Law of Triviality/i)
++      await expectMessage(robot, 'bikeshed', /#123ABC.*color-hex\.com\/color\/123ABC/i)
++      globalThis.fetch = async () => { throw new Error('Color API unavailable') }
++      await expectMessage(robot, 'bikeshedding', /thecolorapi\.com is down/i)
++    } finally {
++      globalThis.fetch = originalFetch
++    }
+     await expectMessage(robot, 'slackbot appearin integration-check', /^https:\/\/meet\.jit\.si\/integration-check$/)
+     await expectMessage(robot, 'slackbot map me Lansing, MI', /^https:\/\/www\.google\.com\/maps\/search\//)
+     await expectMessage(robot, 'ship it', /^https:\/\/.*\.(?:png|jpg)$/)
+-    await expectMessage(robot, 'slackbot shoot local in the body', /foam dart|Target acquired|shoot/i)
++    await expectMessage(robot, 'slackbot shoot local in the body', /fires a foam dart at local's body/i)
++    await expectMessage(robot, 'slackbot shoot nobody in the head', /doesn't exist/i)
+   } finally {
+     robot.shutdown()
+   }
+diff --git a/docs/legacy-command-attribution.md b/docs/legacy-command-attribution.md
+new file mode 100644
+index 0000000..d3503ed
+--- /dev/null
++++ b/docs/legacy-command-attribution.md
+@@ -0,0 +1,16 @@
++# Legacy command attribution
++
++The local JavaScript replacements preserve user-facing responses and command
++patterns from these retired CoffeeScript packages. The original source and
++licenses are linked below; included notices are in `legacy-command-licenses/`.
++
++| Local initializer | Original package | License |
++| --- | --- | --- |
++| `legacy-bikeshed.js` | [hubot-bikeshed 1.3.0](https://github.com/hubot-scripts/hubot-bikeshed) | MIT |
++| `legacy-darts.js` | [hubot-darts 1.0.4](https://github.com/hubot-scripts/hubot-darts) | MIT |
++| `legacy-principles.js` | [hubot-principles 1.0.0](https://github.com/hubot-scripts/hubot-principles) | Do What You Want to Public License v3 |
++| `legacy-thank-you.js` | [hubot-thank-you 0.0.3](https://github.com/hubot-scripts/hubot-thank-you) | MIT |
++
++The diagnostics, help, and rules packages remain installed as npm packages and
++are loaded from their JavaScript implementations. Their package licenses are
++included by npm. No CoffeeScript package or runtime loader is needed.
+diff --git a/docs/legacy-command-licenses/hubot-bikeshed-LICENSE b/docs/legacy-command-licenses/hubot-bikeshed-LICENSE
+new file mode 100644
+index 0000000..70e6686
+--- /dev/null
++++ b/docs/legacy-command-licenses/hubot-bikeshed-LICENSE
+@@ -0,0 +1,20 @@
++The MIT License (MIT)
++
++Copyright (c) 2013 hubot-scripts
++
++Permission is hereby granted, free of charge, to any person obtaining a copy of
++this software and associated documentation files (the "Software"), to deal in
++the Software without restriction, including without limitation the rights to
++use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
++the Software, and to permit persons to whom the Software is furnished to do so,
++subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
++FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
++COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
++IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git a/docs/legacy-command-licenses/hubot-darts-LICENSE b/docs/legacy-command-licenses/hubot-darts-LICENSE
+new file mode 100644
+index 0000000..53f64aa
+--- /dev/null
++++ b/docs/legacy-command-licenses/hubot-darts-LICENSE
+@@ -0,0 +1,20 @@
++The MIT License (MIT)
++
++Copyright (c) 2014 Brian Sensale
++
++Permission is hereby granted, free of charge, to any person obtaining a copy of
++this software and associated documentation files (the "Software"), to deal in
++the Software without restriction, including without limitation the rights to
++use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
++the Software, and to permit persons to whom the Software is furnished to do so,
++subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
++FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
++COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
++IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git a/docs/legacy-command-licenses/hubot-principles-LICENSE b/docs/legacy-command-licenses/hubot-principles-LICENSE
+new file mode 100644
+index 0000000..1d5fddc
+--- /dev/null
++++ b/docs/legacy-command-licenses/hubot-principles-LICENSE
+@@ -0,0 +1,22 @@
++             DO WHAT YOU WANT TO PUBLIC LICENSE
++                  Version 3, December 2012
++
++ Copyright (C) 2012 Devin Weaver <suki@tritarget.org>
++
++ Everyone is permitted to copy and distribute verbatim or modified
++ copies of this license document, and changing it is allowed as long
++ as the name and author are changed.
++
++             DO WHAT YOU WANT TO PUBLIC LICENSE
++ TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
++
++  0. You just DO WHAT YOU WANT TO.
++
++  1. Attribution is OPTIONAL, however, APPRECIATED.
++
++ TERMS AND CONDITIONS FOR FITNESS FOR PURPOSE
++
++  0. USAGE of any material, in whole or in part, comes WITHOUT WARRANTY.
++
++  1. To the extent permitted by applicable law, This license offers no
++     claim of FITNESS FOR PURPOSE.
+diff --git a/docs/legacy-command-licenses/hubot-thank-you-LICENSE b/docs/legacy-command-licenses/hubot-thank-you-LICENSE
+new file mode 100644
+index 0000000..4f8756b
+--- /dev/null
++++ b/docs/legacy-command-licenses/hubot-thank-you-LICENSE
+@@ -0,0 +1,21 @@
++MIT License
++
++Copyright (c) Lucas Videla and hubot-thank-you contributors
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
+diff --git a/legacy-scripts.json b/legacy-scripts.json
+deleted file mode 100644
+index f368340..0000000
+--- a/legacy-scripts.json
++++ /dev/null
+@@ -1,9 +0,0 @@
+-[
+-  "hubot-diagnostics",
+-  "hubot-help",
+-  "hubot-rules",
+-  "hubot-darts",
+-  "hubot-thank-you",
+-  "hubot-bikeshed",
+-  "hubot-principles"
+-]
+diff --git a/lib/initializers/legacy-bikeshed.js b/lib/initializers/legacy-bikeshed.js
+new file mode 100644
+index 0000000..51b1331
+--- /dev/null
++++ b/lib/initializers/legacy-bikeshed.js
+@@ -0,0 +1,29 @@
++// Description:
++//   Explain bikeshedding and suggest a color.
++// Commands:
++//   What is bikeshedding? - Explain bikeshedding
++//   bikeshed - Suggest a bikeshed color
++//   bikeshedding - Suggest a bikeshed color
++// Based on hubot-bikeshed 1.3.0 (MIT); see docs/legacy-command-attribution.md.
++
++const explanation = 'The term was coined as a metaphor to illuminate Parkinson’s Law of Triviality. Parkinson observed that a committee whose job is to approve plans for a nuclear power plant may spend the majority of its time on relatively unimportant but easy-to-grasp issues, such as what materials to use for the staff bikeshed, while neglecting the design of the power plant itself, which is far more important but also far more difficult to criticize constructively. It was popularized in the Berkeley Software Distribution community by Poul Henning-Kamp and has spread from there to the software industry at large.'
++
++module.exports = robot => {
++  robot.hear(/What is bikeshedding\?/i, msg => msg.send(explanation))
++
++  robot.hear(/\bbike(shed|shedding)\b/i, async msg => {
++    try {
++      const response = await fetch('https://www.thecolorapi.com/random', {
++        signal: AbortSignal.timeout(5000)
++      })
++      if (!response.ok) throw new Error(`Color API HTTP ${response.status}`)
++      const color = await response.json()
++      if (!/^#[0-9a-f]{6}$/i.test(color.hex?.value) || !/^[0-9a-f]{6}$/i.test(color.hex?.clean)) {
++        throw new Error('Invalid color response')
++      }
++      msg.send(`If we are talking about bikesheds, I suggest we should use ${color.hex.value}, for you humans, http://www.color-hex.com/color/${color.hex.clean}`)
++    } catch {
++      msg.send("Seems thecolorapi.com is down, looks like you'll get #FFFFF")
++    }
++  })
++}
+diff --git a/lib/initializers/legacy-darts.js b/lib/initializers/legacy-darts.js
+new file mode 100644
+index 0000000..14e0dec
+--- /dev/null
++++ b/lib/initializers/legacy-darts.js
+@@ -0,0 +1,53 @@
++// Description:
++//   Have a foam dart fight.
++// Commands:
++//   hubot shoot target (in the legs/head/body) - Fire a foam dart
++// Based on hubot-darts 1.0.4 (MIT); see docs/legacy-command-attribution.md.
++
++module.exports = robot => {
++  robot.respond(/shoot ((.+)(?: in the )(head|body|legs)?|(.*))/i, msg => {
++    let victimName = msg.match[2] || msg.match[4]
++    if (victimName.startsWith('@')) victimName = victimName.slice(1)
++
++    const users = robot.brain.usersForFuzzyName(victimName)
++    if (users.length > 1) {
++      msg.reply("Be more specific; I can't shoot more than one person at once!")
++      return
++    }
++    const victim = users.length === 1 ? users[0] : null
++    if (!victim) {
++      msg.reply("You want me to shoot someone who doesn't exist.  You are strange.")
++      return
++    }
++
++    msg.reply('Target acquired.')
++    const aim = msg.match[3] || msg.random(['head', 'body', 'legs'])
++    const target = msg.random([aim, aim, aim, aim, 'miss'])
++    const name = victim.name
++    const hits = {
++      head: [
++        `It hits ${name} right in the eye!  You monster!`,
++        `It bounces right off ${name}'s nose.`,
++        `It hits ${name} in the ear.  Why would you do that?`,
++        `POW!  BANG!  ${name} is hit right in the kisser!`,
++        `Right in the temple.  ${name} falls limp to the floor.`
++      ],
++      body: [
++        `The shot bounces off ${name}'s shoulder.`,
++        `It hits ${name} right in the chest.  ${name} has trouble drawing their next breath.`,
++        `The dart hits ${name} in the stomach and gets lodged in their belly button.`,
++        `It hits ${name} in the back, causing temporary paralysis.`,
++        `The dart bounces off ${name}'s left shoulder, spinning them violently around.`
++      ],
++      legs: [
++        `The dart smacks into ${name}'s thigh.  Charlie Horse!!!`,
++        `The dart hits ${name} square in the crotch.  I need an adult!`,
++        `It hits ${name} right in the kneecap.  What did they owe you money?`,
++        `It smacks into ${name}'s pinkie toe.  They go wee wee wee all the way home!`,
++        `The dart hits right on ${name}'s shin, knocking them to the ground`
++      ]
++    }
++    const result = target === 'miss' ? 'The shot sails safely overhead.' : msg.random(hits[target])
++    msg.emote(`fires a foam dart at ${name}'s ${aim}.  ${result}`)
++  })
++}
+diff --git a/lib/initializers/legacy-principles.js b/lib/initializers/legacy-principles.js
+new file mode 100644
+index 0000000..f49dcda
+--- /dev/null
++++ b/lib/initializers/legacy-principles.js
+@@ -0,0 +1,57 @@
++// Description:
++//   Give relationship and communication principles.
++// Commands:
++//   hubot principle me - Respond with a random principle
++//   hubot principle all - Respond with all principles
++//   hubot principle bomb - Respond with all principles
++// Based on hubot-principles 1.0.0 (DWYWPL); see docs/legacy-command-attribution.md.
++
++const principles = [
++  'You can not expect to have what you want if you do not ask for what you want.',
++  'Just because you feel bad doesn’t necessarily mean someone did something wrong.',
++  'Just because you feel good doesn’t necessarily mean that what you’re doing is right.',
++  'Integrity matters—not for the people around you, but for you.',
++  'Life rewards people who move in the direction of greatest courage.',
++  'An expectation on your part does not incur an obligation on someone else’s.',
++  'When you feel something scary or unpleasant, talk about it.',
++  'Your partners add value to your life; treat them preciously.',
++  'Make sure your partner’s heart is safe in your hands.',
++  'The easiest way to attract people with the qualities you desire is to be the sort of person that someone with those qualities finds interesting.',
++  'People are not commodities.',
++  'There are a whole lot of things your partner will do that are Not About You.',
++  'Different people express love in different ways; learn to recognize the way your partner speaks of love, so that you know it when you see it.',
++  'Don’t treat people the way you’d have them treat you; treat them the way they’d have you treat them.',
++  'Pay attention.',
++  'We are all born of frailty and error; it is important that we forgive one another’s failings reciprocally.',
++  'Being in a relationship that does not meet your needs is not necessarily better than being alone.',
++  'Love is abundant.',
++  'It is not necessary to be the best at everything, nor even the best at anything; alone of all the people in the world, only you bring your unique mix of qualities to the table.',
++  'Relationships entered into from conscious choice are often more rewarding than ones entered into out of default assumptions.',
++  'Don’t play games, especially with other people’s hearts.',
++  'The things you think are important when you’re theorizing about relationships are not always the things that turn out to be important.',
++  'Be flexible.',
++  'A relationship with a partner who chooses, every day, to be with you is more satisfying than a relationship with a partner who is with you because he or she can’t leave.',
++  'Real security comes from within.',
++  'People are not need fulfillment machines.',
++  'Don’t look to others to complete you.',
++  'Change is a part of life.',
++  'Occasionally, you will feel awkward, uncomfortable, or both; that’s normal, and not something to be feared.',
++  'We are all lousy at predicting how we will respond to new or unfamiliar situations.',
++  'When you hurt someone—and you will—suck it up, take responsibility for it, and do whatever you can to make it right.',
++  'There will be times when relationships end; it doesn’t mean they were a failure, or that the other person is a bad person.',
++  'Your heart will, at some point, almost certainly be broken, and that’s okay; you will survive, and find love again.',
++  'Feelings are not fact.',
++  'Fear of intimacy is the enemy of happiness.',
++  'The times when compassion is the most difficult are the times when it’s most necessary.',
++  'Don’t vilify those who hurt you; they are still people, too.',
++  'It is possible to deeply, profoundly love someone to the bottom of your heart and still not be a good partner for that person.',
++  'Being uncomfortable is not , by itself, a reason not to do something.',
++  'It is almost impossible to be generous or compassionate if all you feel is fear of loss.',
++  'The world is the way it is, not the way we want it to be.',
++  'Life’s song is filled with beauty and chaos and joy and sorrow and pain and uncertainty and ecstasy and heartache and passion; to fear any of these things is to fear life.'
++]
++
++module.exports = robot => {
++  robot.respond(/principle me/i, msg => msg.send(msg.random(principles)))
++  robot.respond(/principle (all|bomb)/i, msg => msg.send(principles.join('\n')))
++}
+diff --git a/lib/initializers/legacy-thank-you.js b/lib/initializers/legacy-thank-you.js
+new file mode 100644
+index 0000000..dcc208c
+--- /dev/null
++++ b/lib/initializers/legacy-thank-you.js
+@@ -0,0 +1,15 @@
++// Description:
++//   Accept thanks politely.
++// Commands:
++//   hubot thank[s] [you] - Hubot accepts your thanks
++// Based on hubot-thank-you 0.0.3 (MIT); see docs/legacy-command-attribution.md.
++
++const responses = [
++  "you're welcome", 'no problem', 'not at all', 'don’t mention it',
++  'it’s no bother', 'it’s my pleasure', 'my pleasure', 'it’s all right',
++  'it’s nothing', 'think nothing of it', 'sure', 'sure thing'
++]
++
++module.exports = robot => {
++  robot.respond(/(thank).*/i, msg => msg.send(msg.random(responses)))
++}
+diff --git a/lib/load-legacy-scripts.js b/lib/load-legacy-scripts.js
+deleted file mode 100644
+index 0a1c052..0000000
+--- a/lib/load-legacy-scripts.js
++++ /dev/null
+@@ -1,24 +0,0 @@
+-const fs = require('node:fs')
+-const path = require('node:path')
+-
+-require('coffeescript/register')
+-
+-module.exports = async (robot, packages) => {
+-  for (const name of packages) {
+-    const packageFolder = path.dirname(require.resolve(name))
+-    const scriptsFolder = path.join(packageFolder, 'src')
+-    const coffeeScripts = fs.existsSync(scriptsFolder)
+-      ? fs.readdirSync(scriptsFolder).filter(file => file.endsWith('.coffee'))
+-      : []
+-
+-    if (coffeeScripts.length > 0) {
+-      for (const file of coffeeScripts) {
+-        const script = path.join(scriptsFolder, file)
+-        await require(script)(robot)
+-        robot.parseHelp(script)
+-      }
+-    } else {
+-      await require(name)(robot)
+-    }
+-  }
+-}
+diff --git a/lib/load-supported-hubot-packages.js b/lib/load-supported-hubot-packages.js
+new file mode 100644
+index 0000000..f85712c
+--- /dev/null
++++ b/lib/load-supported-hubot-packages.js
+@@ -0,0 +1,16 @@
++// These packages already ship JavaScript command implementations. Load their
++// implementations directly because their old index wrappers call Hubot's
++// removed loadFile API. The CoffeeScript commands live in local initializers.
++const sources = [
++  'hubot-diagnostics/src/diagnostics.js',
++  'hubot-help/src/help.js',
++  'hubot-rules/src/rules.js'
++]
++
++module.exports = async robot => {
++  for (const source of sources) {
++    const filepath = require.resolve(source)
++    await require(filepath)(robot)
++    robot.parseHelp(filepath)
++  }
++}
+diff --git a/package-lock.json b/package-lock.json
+index adcd032..6a87c55 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -10,18 +10,13 @@
+       "license": "Hippocratic-2.1",
+       "dependencies": {
+         "@hubot-friends/hubot-slack": "^3.8.0",
+-        "coffeescript": "^1.12.7",
+         "cron": "^1.7.1",
+         "firebase": "^13.1.0",
+         "firebase-admin": "^14.5.0",
+         "hubot": "^14.1.1",
+-        "hubot-bikeshed": "^1.3.0",
+-        "hubot-darts": "^1.0.2",
+         "hubot-diagnostics": "^2.1.3",
+         "hubot-help": "^2.1.5",
+-        "hubot-principles": "^1.0.0",
+         "hubot-rules": "^2.1.1",
+-        "hubot-thank-you": "0.0.3",
+         "moment": "^2.29.4",
+         "twitter-api-v2": "^1.31.0"
+       },
+@@ -2256,30 +2251,6 @@
+         "node": ">=12"
+       }
+     },
+-    "node_modules/coffee-script": {
+-      "version": "1.6.3",
+-      "resolved": "https://registry.npmjs.org/coffee-script/-/coffee-script-1.6.3.tgz",
+-      "integrity": "sha512-lpusDYw9xym9ZOqFIeQuzzvTvunm2nlRL++BYhUcLn+77vuidExZG+qDPSKUfDXvuaHeFK6QavntXF+HiOq+/Q==",
+-      "deprecated": "CoffeeScript on NPM has moved to \"coffeescript\" (no hyphen)",
+-      "bin": {
+-        "cake": "bin/cake",
+-        "coffee": "bin/coffee"
+-      },
+-      "engines": {
+-        "node": ">=0.8.0"
+-      }
+-    },
+-    "node_modules/coffeescript": {
+-      "version": "1.12.7",
+-      "license": "MIT",
+-      "bin": {
+-        "cake": "bin/cake",
+-        "coffee": "bin/coffee"
+-      },
+-      "engines": {
+-        "node": ">=0.8.0"
+-      }
+-    },
+     "node_modules/color-convert": {
+       "version": "2.0.1",
+       "resolved": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz",
+@@ -4525,22 +4496,6 @@
+         "npm": ">= 9"
+       }
+     },
+-    "node_modules/hubot-bikeshed": {
+-      "version": "1.3.0",
+-      "resolved": "https://registry.npmjs.org/hubot-bikeshed/-/hubot-bikeshed-1.3.0.tgz",
+-      "integrity": "sha512-2GPNkMw4d0oU9g9j9zm6WWotUlcz1QgnrmqMG4BcckkraoR6WmHGneORSexETAxPBGFHqIS8j6gC+bVHcgOPSw==",
+-      "license": "MIT"
+-    },
+-    "node_modules/hubot-darts": {
+-      "version": "1.0.4",
+-      "resolved": "https://registry.npmjs.org/hubot-darts/-/hubot-darts-1.0.4.tgz",
+-      "integrity": "sha512-7XircBncllMbxUeTh9lgfpOxGgcW0GMRL3nzQFf0NNP3kYyOQLYJoYnShlhvO6pdKaPHLc9Ys46ZOpEG7sIF/A==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "coffee-script": "~1.6",
+-        "hubot": ">= 2.4.0"
+-      }
+-    },
+     "node_modules/hubot-diagnostics": {
+       "version": "2.1.3",
+       "resolved": "https://registry.npmjs.org/hubot-diagnostics/-/hubot-diagnostics-2.1.3.tgz",
+@@ -4565,15 +4520,6 @@
+         "hubot": ">= 9 || 0.0.0-development"
+       }
+     },
+-    "node_modules/hubot-principles": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/hubot-principles/-/hubot-principles-1.0.0.tgz",
+-      "integrity": "sha512-0GpjHJn+YZ2uL6r06udheV41kRyWvXcgeDvJOu1SPQD41tqEXrDkRX/iPjFAunFs960WAdm+esne8cbvBHPvHg==",
+-      "license": "http://tritarget.org/wywtpl/",
+-      "dependencies": {
+-        "coffee-script": "~1.6"
+-      }
+-    },
+     "node_modules/hubot-rules": {
+       "version": "2.1.1",
+       "resolved": "https://registry.npmjs.org/hubot-rules/-/hubot-rules-2.1.1.tgz",
+@@ -4587,15 +4533,6 @@
+         "hubot": ">= 9 || 0.0.0-development"
+       }
+     },
+-    "node_modules/hubot-thank-you": {
+-      "version": "0.0.3",
+-      "resolved": "https://registry.npmjs.org/hubot-thank-you/-/hubot-thank-you-0.0.3.tgz",
+-      "integrity": "sha512-tw9vhQrAN2A34aSlLlv9QgfjpotYKowv3pg+H8MR9JVhkyKuBazTdEgQV8ymjvSUWf0eh6udb9w0ytu9xOzoKw==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "coffee-script": "~1.6"
+-      }
+-    },
+     "node_modules/iconv-lite": {
+       "version": "0.7.3",
+       "resolved": "https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.7.3.tgz",
+diff --git a/package.json b/package.json
+index 17f94e7..00e0670 100644
+--- a/package.json
++++ b/package.json
+@@ -19,18 +19,13 @@
+   "description": "Lansing Code's helpful, neighborhood Slack robot",
+   "dependencies": {
+     "@hubot-friends/hubot-slack": "^3.8.0",
+-    "coffeescript": "^1.12.7",
+     "cron": "^1.7.1",
+     "firebase": "^13.1.0",
+     "firebase-admin": "^14.5.0",
+     "hubot": "^14.1.1",
+-    "hubot-bikeshed": "^1.3.0",
+-    "hubot-darts": "^1.0.2",
+     "hubot-diagnostics": "^2.1.3",
+     "hubot-help": "^2.1.5",
+-    "hubot-principles": "^1.0.0",
+     "hubot-rules": "^2.1.1",
+-    "hubot-thank-you": "0.0.3",
+     "moment": "^2.29.4",
+     "twitter-api-v2": "^1.31.0"
+   },
+diff --git a/scripts/initialize.js b/scripts/initialize.js
+index 89b5bae..b3dcba3 100644
+--- a/scripts/initialize.js
++++ b/scripts/initialize.js
+@@ -14,10 +14,7 @@
+ 
+ const fs = require('fs')
+ const path = require('path')
+-const legacyScripts = require('../legacy-scripts.json')
+-const loadLegacyScripts = require('../lib/load-legacy-scripts')
+-
+-require('coffeescript/register')
++const loadSupportedPackages = require('../lib/load-supported-hubot-packages')
+ 
+ module.exports = async (robot) => {
+   robot.error((error, message) => {
+@@ -41,9 +38,9 @@ module.exports = async (robot) => {
+   if (!robot.router) robot.setupNullRouter()
+ 
+   try {
+-    await loadLegacyScripts(robot, legacyScripts)
++    await loadSupportedPackages(robot)
+   } catch (error) {
+-    robot.logger.error(`Unable to load a legacy script: ${error.stack}`)
++    robot.logger.error(`Unable to load a Hubot package: ${error.stack}`)
+     process.exit(1)
+   }
+ }

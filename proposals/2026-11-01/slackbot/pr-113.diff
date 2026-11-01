@@ -1,0 +1,299 @@
+diff --git a/dev-tools/live-event-channel-smoke.js b/dev-tools/live-event-channel-smoke.js
+index a089c03..35a938a 100644
+--- a/dev-tools/live-event-channel-smoke.js
++++ b/dev-tools/live-event-channel-smoke.js
+@@ -28,6 +28,11 @@ async function slackApi (method, body) {
+ }
+ 
+ async function main () {
++  const refreshment = process.argv[2]
++  assert([undefined, '--cupcake', '--latte', '--pumpkin'].includes(refreshment), 'Use --cupcake, --latte, or --pumpkin')
++  if (refreshment === '--pumpkin') {
++    assert([8, 9, 10].includes(new Date().getUTCMonth()), 'Pumpkin spice latte is available September-November')
++  }
+   assert.equal(process.env.FIRESTORE_EMULATOR_HOST, undefined, 'Use cloud Firestore')
+   assert.notEqual(process.env.NOTIFICATION_STORE, 'memory', 'Use persistent notifications')
+   const webConfig = JSON.parse(process.env.FIREBASE_WEB_CONFIG || '{}')
+@@ -78,8 +83,25 @@ async function main () {
+   try {
+     await eventRef.create(event)
+     const run = require('../lib/scheduled-tasks/check-for-upcoming-events')
+-    await run(robot)
+-    await run(robot)
++    const runWithRefreshment = async () => {
++      const previousRandom = Math.random
++      if (refreshment) {
++        const picks = refreshment === '--cupcake'
++          ? [0.75, 0.99, 0.5]
++          : refreshment === '--pumpkin' ? [0.25, 0.999, 0] : [0.25, 0.12, 0]
++        let index = 0
++        Math.random = () => picks[Math.min(index++, picks.length - 1)]
++      }
++      try {
++        const result = run(robot)
++        Math.random = previousRandom
++        await result
++      } finally {
++        Math.random = previousRandom
++      }
++    }
++    await runWithRefreshment()
++    await runWithRefreshment()
+     assert.deepEqual(errors, [], 'Scheduler reported an error')
+     const eventPosts = posted.filter(message => message.text.includes(url))
+     assert.equal(eventPosts.length, 1, 'Event must be announced exactly once')
+@@ -93,6 +115,18 @@ async function main () {
+     const claim = await notificationRef.get()
+     assert.equal(claim.get('status'), 'delivered')
+     assert.equal(claim.get('key'), id)
++    if (refreshment) {
++      const name = refreshment === '--cupcake'
++        ? 'cupcake'
++        : refreshment === '--pumpkin' ? 'pumpkin spice latte' : 'latte'
++      const mornings = posted.filter(message => message.text.startsWith('Good morning everyone!'))
++      const noEvents = posted.filter(message => message.text.startsWith("I didn't find any new meetups."))
++      assert.equal(mornings.length, 2)
++      assert.equal(noEvents.length, 1)
++      assert(mornings.every(message => message.text.includes(`grab a ${name}`)))
++      assert(noEvents[0].text.includes(name))
++      if (name === 'cupcake') assert(!/drink|drank|sip|taste/i.test(noEvents[0].text))
++    }
+     console.log(`PASS: scheduler messages stayed in #${info.channel.name}; event announced once at ${eventPosts[0].ts} and did not repeat`)
+   } finally {
+     await Promise.all([eventRef.delete(), notificationRef.delete()])
+diff --git a/lib/helpers/choose-beverage.js b/lib/helpers/choose-beverage.js
+index 2294c36..e16701c 100644
+--- a/lib/helpers/choose-beverage.js
++++ b/lib/helpers/choose-beverage.js
+@@ -13,6 +13,14 @@ const beverages = [
+     article: 'a',
+     name: 'coffee'
+   },
++  {
++    article: 'a',
++    name: 'latte'
++  },
++  {
++    article: 'an',
++    name: 'iced latte'
++  },
+   {
+     article: 'some',
+     name: 'cranberry juice'
+@@ -107,6 +115,12 @@ const beverages = [
+   }
+ ]
+ 
++const seasonalBeverages = [
++  { article: 'a', name: 'pumpkin spice latte', months: [8, 9, 10] },
++  { article: 'a', name: 'peppermint mocha', months: [11, 0, 1] },
++  { article: 'some', name: 'strawberry lemonade', months: [5, 6, 7] }
++]
++
+ const reactions = [
+   'This {beverage.name}\'s great though!',
+   'And someone drank the last of my {beverage.name}! It was one of you, wasn\'t it?!',
+@@ -128,7 +142,11 @@ const reactionTo = (beverage) =>
+     .replace(/\{beverage.name\}/g, beverage.name)
+     .replace(/\{beverage.article\}/g, beverage.article)
+ 
+-module.exports = () => {
+-  const beverage = sample(beverages)
++module.exports = (date = new Date()) => {
++  const month = date.getUTCMonth()
++  const available = beverages.concat(seasonalBeverages
++    .filter(beverage => beverage.months.includes(month))
++    .map(({ article, name }) => ({ article, name })))
++  const beverage = sample(available)
+   return [beverage, reactionTo(beverage)]
+ }
+diff --git a/lib/helpers/choose-snack.js b/lib/helpers/choose-snack.js
+new file mode 100644
+index 0000000..c940217
+--- /dev/null
++++ b/lib/helpers/choose-snack.js
+@@ -0,0 +1,27 @@
++const sample = require('./sample')
++
++const snacks = [
++  { article: 'a', name: 'donut' },
++  { article: 'a', name: 'glazed donut' },
++  { article: 'a', name: 'bagel' },
++  { article: 'an', name: 'everything bagel' },
++  { article: 'a', name: 'pastry' },
++  { article: 'a', name: 'cinnamon pastry' },
++  { article: 'a', name: 'chocolate cupcake' },
++  { article: 'a', name: 'cupcake' }
++]
++
++const reactions = [
++  'This {snack.name} is just what I needed. Anyone else want one?',
++  'Who left this {snack.name} here? I may have to investigate.',
++  'I found crumbs from {snack.article} {snack.name}. The mystery continues.',
++  'There might be one more {snack.name} in the box. No promises.'
++]
++
++module.exports = () => {
++  const snack = sample(snacks)
++  const reaction = sample(reactions)
++    .replace(/\{snack.name\}/g, snack.name)
++    .replace(/\{snack.article\}/g, snack.article)
++  return [snack, reaction]
++}
+diff --git a/lib/scheduled-tasks/check-for-upcoming-events.js b/lib/scheduled-tasks/check-for-upcoming-events.js
+index 3e64a23..7577498 100644
+--- a/lib/scheduled-tasks/check-for-upcoming-events.js
++++ b/lib/scheduled-tasks/check-for-upcoming-events.js
+@@ -1,5 +1,7 @@
+ const moment = require('moment')
+ const chooseBeverage = require('../helpers/choose-beverage')
++const chooseSnack = require('../helpers/choose-snack')
++const sample = require('../helpers/sample')
+ const getEventsCacher = require('../cachers/events-cacher')
+ const initEventsFetcher = require('../fetchers/events-fetcher')
+ const isToday = require('../helpers/is-today')
+@@ -51,7 +53,7 @@ module.exports = (robot) => {
+   // We haven't found any new meetups yet
+   let eventsWereAnnounced = false
+ 
+-  const [beverageChoice, beverageReaction] = chooseBeverage()
++  const [refreshment, refreshmentReaction] = sample([chooseBeverage, chooseSnack])()
+   const announce = (item, room, text, alsoCache = []) => eventsCacher.deliverOnce(
+     item,
+     () => postRoomMessage(robot, room, text),
+@@ -65,7 +67,7 @@ module.exports = (robot) => {
+       await eventsCacher.load()
+       await postRoomMessage(robot,
+         announcementRoom,
+-        `Good morning everyone! Yawn... I'm gonna grab ${beverageChoice.article} ${beverageChoice.name} and check for newly scheduled meetups.`
++        `Good morning everyone! Yawn... I'm gonna grab ${refreshment.article} ${refreshment.name} and check for newly scheduled meetups.`
+       )
+       for (const event of events) {
+         const localAnnouncementRoom = announcementRoomFor(event)
+@@ -114,7 +116,7 @@ module.exports = (robot) => {
+         // Tell people we didn't find any meetups.
+         await postRoomMessage(robot,
+           announcementRoom,
+-          `I didn't find any new meetups. ${beverageReaction}`
++          `I didn't find any new meetups. ${refreshmentReaction}`
+         )
+       }
+     })
+diff --git a/spec/lib/helpers/choose-beverage-spec.js b/spec/lib/helpers/choose-beverage-spec.js
+index 1766fc6..08ff3c4 100644
+--- a/spec/lib/helpers/choose-beverage-spec.js
++++ b/spec/lib/helpers/choose-beverage-spec.js
+@@ -1,4 +1,5 @@
+ const chooseBeverage = require('../../../lib/helpers/choose-beverage')
++const proxyquire = require('proxyquire')
+ 
+ describe('choose-beverage', () => {
+   let beverageChoice
+@@ -20,4 +21,36 @@ describe('choose-beverage', () => {
+   it('should return a defined beverage reaction', () => {
+     expect(beverageReaction).toBeDefined()
+   })
++
++  it('includes a latte without changing drink reactions', () => {
++    const chooseLatte = proxyquire('../../../lib/helpers/choose-beverage', {
++      './sample': items => typeof items[0] === 'string'
++        ? items[0]
++        : items.find(item => item.name === 'latte')
++    })
++    const [latte, reaction] = chooseLatte()
++    expect(latte).toEqual({ article: 'a', name: 'latte' })
++    expect(reaction).toContain('latte')
++  })
++
++  it('offers seasonal drinks only during their selected UTC months', () => {
++    const availableOn = date => {
++      let available
++      const choose = proxyquire('../../../lib/helpers/choose-beverage', {
++        './sample': items => {
++          if (typeof items[0] === 'string') return items[0]
++          available = items
++          return items[0]
++        }
++      })
++      choose(new Date(date))
++      return available.map(item => item.name)
++    }
++
++    expect(availableOn('2026-10-15T12:00:00Z')).toContain('pumpkin spice latte')
++    expect(availableOn('2026-10-15T12:00:00Z')).not.toContain('peppermint mocha')
++    expect(availableOn('2026-01-15T12:00:00Z')).toContain('peppermint mocha')
++    expect(availableOn('2026-07-15T12:00:00Z')).toContain('strawberry lemonade')
++    expect(availableOn('2026-04-15T12:00:00Z')).not.toContain('strawberry lemonade')
++  })
+ })
+diff --git a/spec/lib/helpers/choose-snack-spec.js b/spec/lib/helpers/choose-snack-spec.js
+new file mode 100644
+index 0000000..0db4316
+--- /dev/null
++++ b/spec/lib/helpers/choose-snack-spec.js
+@@ -0,0 +1,33 @@
++const proxyquire = require('proxyquire')
++
++describe('choose-snack', () => {
++  it('pairs each snack with a snack reaction rather than a drink reaction', () => {
++    const snacks = [
++      ['a', 'donut'], ['a', 'glazed donut'],
++      ['a', 'bagel'], ['an', 'everything bagel'],
++      ['a', 'pastry'], ['a', 'cinnamon pastry'],
++      ['a', 'chocolate cupcake'], ['a', 'cupcake']
++    ]
++    snacks.forEach(([article, name], index) => {
++      const chooseSnack = proxyquire('../../../lib/helpers/choose-snack', {
++        './sample': items => items[index % items.length]
++      })
++      const [snack, reaction] = chooseSnack()
++      expect(snack).toEqual({ article, name })
++      expect(reaction).toContain(name)
++      expect(reaction).not.toMatch(/drink|drank|sip|taste/i)
++      expect(reaction).not.toContain('{snack.name}')
++      expect(reaction).not.toContain('{snack.article}')
++    })
++  })
++
++  it('uses the right article for an everything bagel', () => {
++    let call = 0
++    const chooseSnack = proxyquire('../../../lib/helpers/choose-snack', {
++      './sample': items => items[call++ === 0 ? 3 : 2]
++    })
++    const [snack, reaction] = chooseSnack()
++    expect(snack.name).toBe('everything bagel')
++    expect(reaction).toContain('an everything bagel')
++  })
++})
+diff --git a/spec/lib/scheduled-tasks/check-for-upcoming-events-spec.js b/spec/lib/scheduled-tasks/check-for-upcoming-events-spec.js
+index cb7466b..10e1c6f 100644
+--- a/spec/lib/scheduled-tasks/check-for-upcoming-events-spec.js
++++ b/spec/lib/scheduled-tasks/check-for-upcoming-events-spec.js
+@@ -14,6 +14,27 @@ const makeCacher = (alreadyNotifiedRegarding, cache) => () => ({
+ })
+ 
+ describe('check-for-upcoming-events', () => {
++  it('uses matching morning and no-event jokes for drinks and snacks', async () => {
++    for (const [index, name, reaction] of [
++      [0, 'latte', 'The latte is great.'],
++      [1, 'cupcake', 'Crumbs from a cupcake.']
++    ]) {
++      const run = proxyquire('../../../lib/scheduled-tasks/check-for-upcoming-events', {
++        '../helpers/sample': choices => choices[index],
++        '../helpers/choose-beverage': () => [{ article: 'a', name: 'latte' }, 'The latte is great.'],
++        '../helpers/choose-snack': () => [{ article: 'a', name: 'cupcake' }, 'Crumbs from a cupcake.'],
++        '../cachers/events-cacher': makeCacher(() => false, () => {}),
++        '../fetchers/events-fetcher': async () => ({ upcoming: async () => [] })
++      })
++      const robot = { messageRoom: jasmine.createSpy('messageRoom'), logger: { error: jasmine.createSpy('error') } }
++      await run(robot)
++      const messages = robot.messageRoom.calls.allArgs().map(args => args[1])
++      expect(messages[0]).toContain(`grab a ${name}`)
++      expect(messages[1]).toContain(reaction)
++      expect(robot.logger.error).not.toHaveBeenCalled()
++    }
++  })
++
+   it('does not cache a reminder that Slack failed to post', async () => {
+     const oldAnnouncement = process.env.EVENT_ANNOUNCEMENT_CHANNEL_ID
+     const oldGroups = process.env.EVENT_GROUP_CHANNEL_IDS

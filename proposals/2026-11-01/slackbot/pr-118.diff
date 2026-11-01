@@ -1,0 +1,44 @@
+diff --git a/.circleci/config.yml b/.circleci/config.yml
+index 7f92592..7e0a14e 100644
+--- a/.circleci/config.yml
++++ b/.circleci/config.yml
+@@ -18,7 +18,10 @@ jobs:
+           command: |
+             npm install
+             npm rebuild
+-            npm test
++            npm test > /tmp/slackbot-jasmine.log 2>&1
++      - store_artifacts:
++          path: /tmp/slackbot-jasmine.log
++          destination: jasmine.log
+       - save_cache:
+           key: v1-dep-{{ .Branch }}-{{ checksum "package-lock.json" }}
+           paths:
+diff --git a/spec/lib/helpers/shorten-url-spec.js b/spec/lib/helpers/shorten-url-spec.js
+index 0897482..573c92f 100644
+--- a/spec/lib/helpers/shorten-url-spec.js
++++ b/spec/lib/helpers/shorten-url-spec.js
+@@ -1,10 +1,19 @@
++const TinyURL = require('tinyurl')
+ const shortenUrl = require('../../../lib/helpers/shorten-url')
+ 
+ describe('shorten-url', () => {
+-  it('produces a URL beginning with "https://tinyurl.com/"', (done) => {
+-    shortenUrl('http://www.google.com', (shortUrl) => {
+-      expect(shortUrl.startsWith('https://tinyurl.com/')).toBeTrue()
+-      done()
++  it('passes the TinyURL result to the caller', () => {
++    const longUrl = 'https://www.meetup.com/example/event/123'
++    const shortUrl = 'https://tinyurl.com/example'
++    spyOn(TinyURL, 'shorten').and.callFake((url, callback) => {
++      expect(url).toBe(longUrl)
++      callback(shortUrl)
+     })
++
++    const callback = jasmine.createSpy('callback')
++    shortenUrl(longUrl, callback)
++
++    expect(TinyURL.shorten).toHaveBeenCalledTimes(1)
++    expect(callback).toHaveBeenCalledOnceWith(shortUrl)
+   })
+ })

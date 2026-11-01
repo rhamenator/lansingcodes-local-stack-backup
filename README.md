@@ -2,7 +2,7 @@
 
 This private repository is a snapshot of the local contributor workspaces on October 28, 2026. Each top-level subfolder contains the working files for one Lansing Codes repository, including local edits and non-ignored untracked files. The source `.git` directories and ignored build artifacts are excluded. No changes are pushed to the Lansing Codes repositories.
 
-The source branch, base commit, and changed paths for each folder are recorded in [SNAPSHOT_MANIFEST.json](SNAPSHOT_MANIFEST.json). The contributor/admin report is in [slackbot/CONTRIBUTOR_ADMIN_REPORT.md](slackbot/CONTRIBUTOR_ADMIN_REPORT.md).
+The source branch, base commit, and changed paths for each folder are recorded in [SNAPSHOT_MANIFEST.json](SNAPSHOT_MANIFEST.json). The [November 1 proposal archive](proposals/2026-11-01/README.md) preserves exact diffs and heads for 60 open contributor-authored PRs across the 11 active repositories. The root-level folders remain the October 28 snapshot; apply a proposal patch to its recorded base to reconstruct later work. The contributor/admin report is in [slackbot/CONTRIBUTOR_ADMIN_REPORT.md](slackbot/CONTRIBUTOR_ADMIN_REPORT.md).
 
 | Folder | Source branch | Snapshot files | Local changes |
 | --- | --- | ---: | ---: |
