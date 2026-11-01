@@ -1,0 +1,12 @@
+{
+  "repository": "jguett/lansingcodes-website",
+  "number": 2,
+  "url": "https://github.com/jguett/lansingcodes-website/pull/2",
+  "lansingcodes_issue": "https://github.com/lansingcodes/website/issues/7",
+  "parent_proposal": "https://github.com/lansingcodes/website/pull/35",
+  "base_ref": "feat/local-data-store",
+  "base_sha": "20ae987d564bb3b2a332015b4e211546385562c0",
+  "head_sha": "abd819e965b1a32945ab03917402eb39e93e858b",
+  "patch": "proposals/2026-11-01/contributor-followups/jguett-website-pr-2.diff",
+  "patch_sha256": "474cb31e3aa89e7021c73491ab24a770d5ae6c318156d1b4a2095bb744f8eef6"
+}

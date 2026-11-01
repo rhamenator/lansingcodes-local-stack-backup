@@ -19,3 +19,5 @@ Each manifest entry records the PR URL, base branch and commit, head commit, pat
 | `website` | 17 |
 
 The older root-level folders remain the October 28 snapshots, including retired `api` and `www` for historical comparison. No production credentials or generated build outputs were added.
+
+A separate [contributor branch follow-up](contributor-followups/README.md) backs up the mock-data PR targeting jguett’s branch for Lansing Codes website issue #7.

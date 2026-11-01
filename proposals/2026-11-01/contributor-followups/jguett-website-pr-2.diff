@@ -1,0 +1,569 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index e39be7f..42b92fc 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -10,6 +10,11 @@ npm run build    # Production build (also runs TypeScript type check)
+ npm run lint     # ESLint
+ ```
+ 
++A fresh development checkout with no `.env.local` uses bundled mock groups,
++sponsors, and relative-date events. `DATA_STORE=mock` selects it explicitly.
++Mock mode is read-only: sync routes return 409. Production refuses mock mode and
++requires Firebase credentials.
++
+ ## Firebase Emulator (optional)
+ 
+ Runs the real Firestore code path locally against project `demo-lansing-codes` (config in `firebase.json` / `.firebaserc`).
+@@ -36,7 +41,7 @@ agent-browser install  # Download Chromium
+ 
+ - **Framework**: Next.js 16 App Router, React 19, TypeScript
+ - **Styling**: Tailwind CSS v4 — theme configured via CSS variables in `app/globals.css` (not a JS config file)
+-- **Data**: Firebase Firestore, read server-side only via Firebase Admin SDK — no client-side Firebase. All access goes through `getStore()` in `lib/store/`; `DATA_STORE=local` swaps in a JSON-file store and `DATA_STORE=emulator` uses the local Firestore emulator (dev only)
++- **Data**: Firebase Firestore, read server-side only via Firebase Admin SDK — no client-side Firebase. All access goes through `getStore()` in `lib/store/`; development without Firebase configuration uses the read-only mock store, `DATA_STORE=local` swaps in a JSON-file store, and `DATA_STORE=emulator` uses the local Firestore emulator
+ - **Rendering**: SSR on every request (`export const dynamic = 'force-dynamic'` on home page)
+ - **Deployment**: Netlify via `@netlify/plugin-nextjs`
+   - Merges to `main` deploy to staging (Netlify project `lansingcodes-staging`, Firebase `lansing-codes-staging`); PRs get deploy previews there
+diff --git a/README.md b/README.md
+index 0fd88cf..aeed326 100644
+--- a/README.md
++++ b/README.md
+@@ -30,8 +30,30 @@ project is exclusively for bug reports and feature requests.
+ 
+ ## Getting started
+ 
+-If you want to run this website and make changes to it on your computer, some
+-initial setup is required.
++### Quick start with mock data
++
++For UI, styling, and copy work, a fresh checkout needs no database, Docker, or
++credentials:
++
++```sh
++git clone https://github.com/lansingcodes/website.git
++cd website
++npm ci
++npm run dev
++```
++
++Open [http://localhost:3000](http://localhost:3000). When no Firebase credentials
++or `DATA_STORE` setting are present, development mode shows bundled sample
++groups, sponsors, and 15 events whose dates follow the current Lansing calendar.
++The page labels these as mock data. Sync routes return HTTP 409 in this mode.
++Set `DATA_STORE=local` to use writable JSON files, `DATA_STORE=emulator` for the
++Firestore emulator, or configure Firebase credentials for a real project.
++Mock mode cannot run in production.
++
++### Full local stack
++
++The following setup is for contributors who need to test sync or database
++behavior.
+ 
+ ### Required software
+ 
+@@ -201,16 +223,15 @@ This project requires Node.js 20 or later. Check your version with
+ `node --version`. If you use nvm, run `nvm install 20` and `nvm use 20`.
+ 
+ **Site looks empty after starting dev server**
+-You need to sync data first. Run `npm run sync` in a second terminal while the
+-dev server is running (see [Syncing data](#syncing-data) above).
++If you selected `DATA_STORE=local`, run `npm run sync` in a second terminal
++while the dev server is running (see [Syncing data](#syncing-data) above).
+ 
+ ## Alternative Storage Options for Local Development
+ 
+-By default the app reads and writes your own Firebase project's Firestore
+-database. For local development you can skip Firebase setup by setting
+-`DATA_STORE` in `.env.local` to one of the options below. With either option the
+-`FIREBASE_*` variables are not needed, but `SYNC_SECRET` is still required to
+-populate data.
++With no Firebase configuration, development mode defaults to bundled mock data.
++To sync real events into your local environment, set `DATA_STORE` in
++`.env.local` to one of the options below. With either option the `FIREBASE_*`
++variables are not needed, but `SYNC_SECRET` is still required to populate data.
+ 
+ `DATA_STORE` is for development only. If it's set in production, the app throws
+ an error when it reads data. Restart the dev server after changing it, and remove it (or comment
+diff --git a/app/api/sync/all/route.ts b/app/api/sync/all/route.ts
+index d854a24..83ddfd3 100644
+--- a/app/api/sync/all/route.ts
++++ b/app/api/sync/all/route.ts
+@@ -3,8 +3,12 @@ import { checkSyncSecret } from '@/lib/api/auth'
+ import { syncEvents } from '@/lib/sync/events'
+ import { syncGroups } from '@/lib/sync/groups'
+ import { syncSponsors } from '@/lib/sync/sponsors'
++import { isMockMode } from '@/lib/store'
+ 
+ export async function POST(request: NextRequest) {
++  if (isMockMode()) {
++    return NextResponse.json({ error: 'sync disabled in mock mode' }, { status: 409 })
++  }
+   if (!checkSyncSecret(request)) {
+     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+   }
+diff --git a/app/api/sync/events/route.ts b/app/api/sync/events/route.ts
+index df65643..98ea026 100644
+--- a/app/api/sync/events/route.ts
++++ b/app/api/sync/events/route.ts
+@@ -1,8 +1,12 @@
+ import { NextRequest, NextResponse } from 'next/server'
+ import { checkSyncSecret } from '@/lib/api/auth'
+ import { syncEvents } from '@/lib/sync/events'
++import { isMockMode } from '@/lib/store'
+ 
+ export async function POST(request: NextRequest) {
++  if (isMockMode()) {
++    return NextResponse.json({ error: 'sync disabled in mock mode' }, { status: 409 })
++  }
+   if (!checkSyncSecret(request)) {
+     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+   }
+diff --git a/app/api/sync/groups/route.ts b/app/api/sync/groups/route.ts
+index e52dbb7..b57bc95 100644
+--- a/app/api/sync/groups/route.ts
++++ b/app/api/sync/groups/route.ts
+@@ -1,8 +1,12 @@
+ import { NextRequest, NextResponse } from 'next/server'
+ import { checkSyncSecret } from '@/lib/api/auth'
+ import { syncGroups } from '@/lib/sync/groups'
++import { isMockMode } from '@/lib/store'
+ 
+ export async function POST(request: NextRequest) {
++  if (isMockMode()) {
++    return NextResponse.json({ error: 'sync disabled in mock mode' }, { status: 409 })
++  }
+   if (!checkSyncSecret(request)) {
+     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+   }
+diff --git a/app/api/sync/sponsors/route.ts b/app/api/sync/sponsors/route.ts
+index 208d546..12a0ac6 100644
+--- a/app/api/sync/sponsors/route.ts
++++ b/app/api/sync/sponsors/route.ts
+@@ -1,8 +1,12 @@
+ import { NextRequest, NextResponse } from 'next/server'
+ import { checkSyncSecret } from '@/lib/api/auth'
+ import { syncSponsors } from '@/lib/sync/sponsors'
++import { isMockMode } from '@/lib/store'
+ 
+ export async function POST(request: NextRequest) {
++  if (isMockMode()) {
++    return NextResponse.json({ error: 'sync disabled in mock mode' }, { status: 409 })
++  }
+   if (!checkSyncSecret(request)) {
+     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+   }
+diff --git a/app/page.tsx b/app/page.tsx
+index 62b1300..5fc9f19 100644
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -7,6 +7,7 @@ import Meetups from '@/components/sections/Meetups'
+ import Resources from '@/components/sections/Resources'
+ import Sponsors from '@/components/sections/Sponsors'
+ import Newsletter from '@/components/sections/Newsletter'
++import { isMockMode } from '@/lib/store'
+ 
+ export const dynamic = 'force-dynamic'
+ 
+@@ -15,6 +16,7 @@ function getCurrentTime() {
+ }
+ 
+ export default async function Home() {
++  const mockMode = isMockMode()
+   const [events, groups, sponsors] = await Promise.all([
+     getUpcomingEvents(),
+     getAllGroups(),
+@@ -31,6 +33,11 @@ export default async function Home() {
+       <Resources />
+       <Sponsors sponsors={sponsors} />
+       <Newsletter />
++      {mockMode && (
++        <p className="bg-yellow-100 px-4 py-2 text-center text-sm text-black">
++          Mock data for local development — these are not real events.
++        </p>
++      )}
+     </>
+   )
+ }
+diff --git a/data/mock/events.json b/data/mock/events.json
+new file mode 100644
+index 0000000..cf1a399
+--- /dev/null
++++ b/data/mock/events.json
+@@ -0,0 +1,167 @@
++[
++  {
++    "id": "welcome",
++    "group": "lansing_codes",
++    "name": "Welcome to Lansing Codes",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/welcome",
++    "dayOffset": 0,
++    "time": "23:30",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "devops-intro",
++    "group": "devops",
++    "name": "DevOps Deployment Lab",
++    "description": "**Bring a question.** We will walk through a small project together and compare notes. Learn more at https://example.com/mock-events. This long description is sample content for checking layout, links, and wrapping across screen sizes.",
++    "url": "https://example.com/mock-events/devops-intro",
++    "dayOffset": 1,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "ai-intro",
++    "group": "ai",
++    "name": "Practical AI Workshop",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/ai-intro",
++    "dayOffset": 1,
++    "time": "19:00",
++    "venue": "",
++    "address": ""
++  },
++  {
++    "id": "dotnet-clinic",
++    "group": "dotnet",
++    "name": ".NET Debugging Clinic",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/dotnet-clinic",
++    "dayOffset": 2,
++    "time": "18:30",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "wordpress-night",
++    "group": "wordpress",
++    "name": "WordPress Build Night",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/wordpress-night",
++    "dayOffset": 3,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "security-night",
++    "group": "misec",
++    "name": "Application Security Night",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/security-night",
++    "dayOffset": 4,
++    "time": "18:30",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "makers-night",
++    "group": "lansing_codes",
++    "name": "Community Maker Night",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/makers-night",
++    "dayOffset": 5,
++    "time": "17:30",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "shared-a",
++    "group": "lansing_codes",
++    "name": "Shared Workshop",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/shared-a",
++    "dayOffset": 6,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "shared-b",
++    "group": "devops",
++    "name": "Shared Workshop",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/shared-b",
++    "dayOffset": 6,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "database-demo",
++    "group": "glass",
++    "name": "Database Demo",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/database-demo",
++    "dayOffset": 8,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "startup-chat",
++    "group": "startupgrind",
++    "name": "Startup Founder Chat",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/startup-chat",
++    "dayOffset": 9,
++    "time": "17:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "ai-tools",
++    "group": "ai",
++    "name": "AI Tools Office Hours",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/ai-tools",
++    "dayOffset": 10,
++    "time": "16:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "frontend-lab",
++    "group": "lit",
++    "name": "Frontend Lab",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/frontend-lab",
++    "dayOffset": 12,
++    "time": "18:30",
++    "venue": "",
++    "address": ""
++  },
++  {
++    "id": "community-social",
++    "group": "lansing_codes",
++    "name": "Community Social",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/community-social",
++    "dayOffset": 16,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  },
++  {
++    "id": "tech-talk",
++    "group": "catech",
++    "name": "Technology Talk",
++    "description": "Sample event for local development. This is not a real Lansing Codes event.",
++    "url": "https://example.com/mock-events/tech-talk",
++    "dayOffset": 21,
++    "time": "18:00",
++    "venue": "Sample venue",
++    "address": "Lansing, MI"
++  }
++]
+diff --git a/lib/store/index.ts b/lib/store/index.ts
+index 97244e5..375498b 100644
+--- a/lib/store/index.ts
++++ b/lib/store/index.ts
+@@ -1,20 +1,43 @@
+ import { firestoreStore } from './firestore'
+ import { localStore } from './local'
++import { mockStore } from './mock'
+ import type { DataStore } from './types'
+ 
+ // DATA_STORE selects the backend (development only for anything but the default):
+-//   unset    — Firestore, using the FIREBASE_* credentials
++//   unset    — Firestore when configured, otherwise mock data in development
++//   mock     — bundled, relative-date fixtures (no credentials or sync)
+ //   local    — JSON files in .data/ (no Firebase needed)
+ //   emulator — Firestore code path against the local Firebase emulator
+ //              (see lib/firebase/admin.ts and `npm run emulator`)
+-export function getStore(): DataStore {
+-  const mode = process.env.DATA_STORE
+-  if (!mode) return firestoreStore
++export function getStoreMode(): 'firestore' | 'mock' | 'local' | 'emulator' {
++  const configured = Boolean(
++    process.env.FIREBASE_SERVICE_ACCOUNT ||
++      process.env.FIREBASE_PROJECT_ID ||
++      process.env.FIREBASE_CLIENT_EMAIL ||
++      process.env.FIREBASE_PRIVATE_KEY,
++  )
++  const mode = process.env.DATA_STORE || (configured ? 'firestore' : 'mock')
++
++  if (mode === 'firestore') return mode
+ 
+   if (process.env.NODE_ENV === 'production') {
+     throw new Error(`DATA_STORE=${mode} is for development only`)
+   }
+-  if (mode === 'local') return localStore
+-  if (mode === 'emulator') return firestoreStore
+-  throw new Error(`Unknown DATA_STORE "${mode}". Use "local" or "emulator", or leave it unset.`)
++  if (mode === 'mock' || mode === 'local' || mode === 'emulator') return mode
++  throw new Error(`Unknown DATA_STORE "${mode}". Use "mock", "local", or "emulator".`)
++}
++
++export function isMockMode(): boolean {
++  return getStoreMode() === 'mock'
++}
++
++export function getStore(): DataStore {
++  switch (getStoreMode()) {
++    case 'mock':
++      return mockStore
++    case 'local':
++      return localStore
++    default:
++      return firestoreStore
++  }
+ }
+diff --git a/lib/store/mock.ts b/lib/store/mock.ts
+new file mode 100644
+index 0000000..f95e1e3
+--- /dev/null
++++ b/lib/store/mock.ts
+@@ -0,0 +1,56 @@
++import { addDays, set, startOfDay } from 'date-fns'
++import { inLansing } from '@/config/time-zone'
++import groupFixtures from '@/data/groups.json'
++import sponsorFixtures from '@/data/sponsors.json'
++import eventFixtures from '@/data/mock/events.json'
++import type { DataStore, ListOptions, StoredDoc } from './types'
++import type { Event } from '@/lib/firestore/events'
++
++type MockEvent = Omit<Event, 'startTime'> & { dayOffset: number; time: string }
++
++function eventsForToday(): Event[] {
++  const today = startOfDay(Date.now(), { in: inLansing })
++  return (eventFixtures as MockEvent[]).map(({ dayOffset, time, ...event }) => {
++    const [hours, minutes] = time.split(':').map(Number)
++    const date = addDays(today, dayOffset, { in: inLansing })
++    return { ...event, startTime: set(date, { hours, minutes }, { in: inLansing }).getTime() }
++  })
++}
++
++function documentsFor(collection: string): (StoredDoc & { id: string })[] {
++  if (collection === 'events') {
++    return eventsForToday() as unknown as (StoredDoc & { id: string })[]
++  }
++  if (collection === 'groups') {
++    return Object.entries(groupFixtures).map(([id, doc]) => ({ id, ...doc }))
++  }
++  if (collection === 'sponsors') {
++    return Object.entries(sponsorFixtures).map(([id, doc]) => ({ id, ...doc }))
++  }
++  throw new Error(`No mock data for collection "${collection}"`)
++}
++
++export const mockStore: DataStore = {
++  async listDocs<T>(collection: string, opts: ListOptions = {}) {
++    let docs = documentsFor(collection)
++    if (opts.range) {
++      const { field, min, max } = opts.range
++      docs = docs.filter((doc) => {
++        const value = doc[field] as number
++        return value >= min && value <= max
++      })
++    }
++    if (opts.orderBy) {
++      const field = opts.orderBy
++      docs.sort((a, b) => {
++        const x = a[field] as string | number
++        const y = b[field] as string | number
++        return x < y ? -1 : x > y ? 1 : 0
++      })
++    }
++    return docs as (T & { id: string })[]
++  },
++  async replaceCollection() {
++    throw new Error('sync disabled in mock mode')
++  },
++}
+diff --git a/package.json b/package.json
+index 258b5fb..7055c08 100644
+--- a/package.json
++++ b/package.json
+@@ -7,7 +7,7 @@
+     "build": "next build",
+     "start": "next start",
+     "lint": "eslint",
+-    "test": "node --test tests/local-store.test.mjs",
++    "test": "node --test tests/*.test.mjs",
+     "sync": "node scripts/sync.mjs all",
+     "sync:all": "node scripts/sync.mjs all",
+     "sync:events": "node scripts/sync.mjs events",
+diff --git a/tests/mock-store.test.mjs b/tests/mock-store.test.mjs
+new file mode 100644
+index 0000000..6c8d77f
+--- /dev/null
++++ b/tests/mock-store.test.mjs
+@@ -0,0 +1,75 @@
++import assert from 'node:assert/strict'
++import { readFile } from 'node:fs/promises'
++import { createRequire } from 'node:module'
++import path from 'node:path'
++import test from 'node:test'
++import { fileURLToPath } from 'node:url'
++import vm from 'node:vm'
++import { tz } from '@date-fns/tz'
++import ts from 'typescript'
++
++const require = createRequire(import.meta.url)
++const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
++const fixtures = {
++  '@/data/groups.json': require(path.join(root, 'data/groups.json')),
++  '@/data/sponsors.json': require(path.join(root, 'data/sponsors.json')),
++  '@/data/mock/events.json': require(path.join(root, 'data/mock/events.json')),
++}
++
++async function load(sourcePath, modules, env = {}, now = Date.now()) {
++  const source = await readFile(path.join(root, sourcePath), 'utf8')
++  const { outputText } = ts.transpileModule(source, {
++    compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: true },
++  })
++  const exports = {}
++  class FixedDate extends Date {
++    static now() { return now }
++  }
++  vm.runInNewContext(outputText, {
++    exports,
++    Date: FixedDate,
++    process: { env },
++    require: (name) => modules[name] ?? require(name),
++  }, { filename: sourcePath })
++  return exports
++}
++
++const mockModules = {
++  ...fixtures,
++  '@/config/time-zone': { inLansing: tz('America/Detroit') },
++}
++
++test('mock events stay populated and use Lansing wall time through DST changes', async () => {
++  for (const [now, expected] of [
++    ['2026-03-07T17:00:00Z', '2026-03-08T22:00:00Z'],
++    ['2026-10-31T16:00:00Z', '2026-11-01T23:00:00Z'],
++  ]) {
++    const { mockStore } = await load('lib/store/mock.ts', mockModules, {}, Date.parse(now))
++    const events = await mockStore.listDocs('events', { orderBy: 'startTime' })
++    assert.equal(events.length, 15)
++    assert.equal(events.find((event) => event.id === 'devops-intro').startTime, Date.parse(expected))
++    assert.equal(events.filter((event) => event.id.startsWith('shared-')).length, 2)
++    const groups = await mockStore.listDocs('groups')
++    const sponsors = await mockStore.listDocs('sponsors')
++    assert.ok(groups.length > 0 && sponsors.length > 0)
++    assert.ok(events.every((event) => groups.some((group) => group.id === event.group)))
++    await assert.rejects(mockStore.replaceCollection('events', {}), /sync disabled in mock mode/)
++  }
++})
++
++test('fresh development uses mock data while production fails closed', async () => {
++  const modules = {
++    './firestore': { firestoreStore: {} },
++    './local': { localStore: {} },
++    './mock': { mockStore: {} },
++  }
++  const index = async (env) => load('lib/store/index.ts', modules, env)
++  assert.equal((await index({ NODE_ENV: 'development' })).getStoreMode(), 'mock')
++  assert.equal((await index({ NODE_ENV: 'development', DATA_STORE: 'local' })).getStoreMode(), 'local')
++  assert.equal((await index({ NODE_ENV: 'development', FIREBASE_PROJECT_ID: 'partial' })).getStoreMode(), 'firestore')
++  assert.equal((await index({ NODE_ENV: 'production', FIREBASE_PROJECT_ID: 'configured' })).getStoreMode(), 'firestore')
++  const noConfigProduction = await index({ NODE_ENV: 'production' })
++  const explicitMockProduction = await index({ NODE_ENV: 'production', DATA_STORE: 'mock' })
++  assert.throws(() => noConfigProduction.getStoreMode(), /development only/)
++  assert.throws(() => explicitMockProduction.getStoreMode(), /development only/)
++})

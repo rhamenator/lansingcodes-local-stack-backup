@@ -25,3 +25,5 @@ The source branch, base commit, and changed paths for each folder are recorded i
 Copy the needed subfolder into a fresh checkout of its matching Lansing Codes repository, then review the diff against the base commit in the manifest. The folders here are snapshots rather than independent Git repositories.
 
 Authentication tokens and API secrets remain in the owner’s GNOME Keyring and are not part of this backup.
+
+The [mock-data contributor follow-up](proposals/2026-11-01/contributor-followups/README.md) is also backed up separately because it targets jguett’s website branch rather than an organization branch.
